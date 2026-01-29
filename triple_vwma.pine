@@ -1,0 +1,36 @@
+//@version=6
+indicator("Triple VWMA", shorttitle="3VWMA", overlay=true)
+
+// --- VWMA 1 Settings (Default: 20) ---
+grp1 = "VWMA 1"
+show1 = input.bool(true, "Show", group=grp1)
+len1 = input.int(20, "Length", minval=1, group=grp1)
+src1 = input.source(close, "Source", group=grp1)
+offset1 = input.int(0, "Offset", minval=-500, maxval=500, group=grp1)
+color1 = input.color(color.blue, "Color", group=grp1)
+
+// --- VWMA 2 Settings (Default: 50) ---
+grp2 = "VWMA 2"
+show2 = input.bool(true, "Show", group=grp2)
+len2 = input.int(50, "Length", minval=1, group=grp2)
+src2 = input.source(close, "Source", group=grp2)
+offset2 = input.int(0, "Offset", minval=-500, maxval=500, group=grp2)
+color2 = input.color(color.orange, "Color", group=grp2)
+
+// --- VWMA 3 Settings (Default: 200) ---
+grp3 = "VWMA 3"
+show3 = input.bool(true, "Show", group=grp3)
+len3 = input.int(200, "Length", minval=1, group=grp3)
+src3 = input.source(close, "Source", group=grp3)
+offset3 = input.int(0, "Offset", minval=-500, maxval=500, group=grp3)
+color3 = input.color(color.red, "Color", group=grp3)
+
+// --- Calculations ---
+vwma1 = ta.vwma(src1, len1)
+vwma2 = ta.vwma(src2, len2)
+vwma3 = ta.vwma(src3, len3)
+
+// --- Plotting ---
+plot(show1 ? vwma1 : na, title="VWMA 1", color=color1, offset=offset1)
+plot(show2 ? vwma2 : na, title="VWMA 2", color=color2, offset=offset2)
+plot(show3 ? vwma3 : na, title="VWMA 3", color=color3, offset=offset3)
