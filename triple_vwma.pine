@@ -99,16 +99,21 @@ trailMultMid = input.float(2.5, "Mid Session Multiplier (60-90%)", group=grpAdap
 trailMultHigh = input.float(1.5, "Exhaustion Multiplier (>90%)", group=grpAdaptive)
 
 // Session time settings for intraday (Kill Zones)
-// Using "America/New_York" times as requested:
-// Asia: 20:00-00:00
-// London Open: 02:00-05:00
-// NY Open: 07:00-10:00
-// London Close: 10:00-12:00
 grpSessions = "Session Settings (EST)"
 kzAsia = input.session("2000-0000", title="Asian Kill Zone", group=grpSessions)
 kzLondon = input.session("0200-0500", title="London Open Kill Zone", group=grpSessions)
 kzNY = input.session("0700-1000", title="NY Open Kill Zone", group=grpSessions)
 kzLondonClose = input.session("1000-1200", title="London Close Kill Zone", group=grpSessions)
+
+// =============================================================================
+// SOP INFO PANEL SETTINGS
+// =============================================================================
+grpSop = "SOP Info Panel"
+showSop = input.bool(true, "Show SOP Info Panel", group=grpSop)
+sopPosInput = input.string("Bottom Left", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=grpSop)
+sopSizeInput = input.string("Small", "Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpSop)
+sopTextColor = input.color(color.white, "Text Color", group=grpSop)
+sopBgColor = input.color(color.new(color.black, 30), "Background Color", group=grpSop)
 
 // =============================================================================
 // TRIPLE VWMA CALCULATIONS
@@ -211,28 +216,15 @@ if inLondonClose
 // Session Start Logic to reset calculations
 var float activeSessionOpen = na
 var bool newSess = false
-// Detect change in active session status
-// We check if current session is active and previous wasn't, or if we switched zones
 isAnySession = inAsia or inLondon or inNY or inLondonClose
 wasAnySession = isAnySession[1]
-// Simplified: if name changed and not off-hours
 newSess := activeSessionName != activeSessionName[1] and activeSessionName != "Off-Hours"
 
 if newSess or barstate.isfirst
     activeSessionOpen := open
 if not isAnySession
-    activeSessionOpen := open // fallback for off-hours
+    activeSessionOpen := open
 
-// Data Fetching for ATR
-// We use Daily ATR for the general logic as per the "Option B" discussion (Session vs Daily)
-// Wait, prompt said: "Option B: The % of the Active Session ATR".
-// This implies comparing current move to the EXPECTED Session ATR.
-// However, calculating expected session ATR dynamically requires historical session data.
-// For simplicity and robustness in this step, we will use the existing logic's timeframe adaptation
-// but Force the calculation to rely on the M5 ATR for the TRAIL, while using the Table's logic for %.
-// The Table logic uses `atrTimeframe` which adapts.
-// Let's refine `atrTimeframe` to respect the Kill Zones if possible, or stick to the robust existing logic.
-// Existing logic:
 isMonthly = timeframe.ismonthly
 isWeekly = timeframe.isweekly
 isDaily = timeframe.isdaily
@@ -274,21 +266,15 @@ atrTimeframe = getATRTimeframe()
     [open, ta.atr(atrLength), ta.atr(atrLength)[1], ta.atr(atrLength)],
     lookahead = barmerge.lookahead_off)
 
-// Reference Open: Use Session Open if inside a Kill Zone, otherwise Period Open
 referenceOpen = isAnySession ? activeSessionOpen : periodOpen
 referenceATR = periodATR
-
-// Calculations
 atrMeanPips = referenceATR * pipMultiplier
 moveFromOpen = math.abs(close - referenceOpen)
 percentReached = referenceATR != 0 ? (moveFromOpen / referenceATR) * 100 : 0
-
-// Directional Pips
 bullishMove = (close > referenceOpen) ? (close - referenceOpen) * pipMultiplier : 0
 bearishMove = (close < referenceOpen) ? (referenceOpen - close) * pipMultiplier : 0
 currentDirectionalPips = bullishMove > 0 ? bullishMove : bearishMove
 
-// Targets
 getTargetMultipliers() =>
     if isMonthly
         [0.5, 1.0, 1.5, 2.0]
@@ -318,10 +304,7 @@ targetReached = currentDirectionalPips >= atrMeanPips
 // =============================================================================
 // ADAPTIVE SESSION TRAIL LOGIC
 // =============================================================================
-// 1. Fetch M5 ATR for the base
 atrM5 = request.security(syminfo.tickerid, "5", ta.atr(14))
-
-// 2. Determine Multiplier based on % Exhaustion (percentReached)
 var float trailMult = trailMultLow
 if percentReached < 60
     trailMult := trailMultLow
@@ -330,48 +313,76 @@ else if percentReached >= 60 and percentReached < 90
 else
     trailMult := trailMultHigh
 
-// 3. Calculate Trail Price
-// We use a Ratchet Logic:
-// Long Trail only moves up. Short Trail only moves down.
-// Reset on Trend Change.
 var float trailPrice = na
-
-// Update Trail Logic
-// If trend just started (triggerBuy/Sell), reset trail
 if triggerBuy
     trailPrice := low - (atrM5 * trailMult)
 else if triggerSell
     trailPrice := high + (atrM5 * trailMult)
-else if currentTrend == 1 // Bullish
-    // Calc potential new trail
-    newTrail = close - (atrM5 * trailMult) // Using Close or High? Standard Chandelier uses High.
-    // Prompt said: "If price pulls back more than 2.5x... it usually means order flow shifted".
-    // This implies trailing from the PEAK (High).
+else if currentTrend == 1
     peak = high
     calcTrail = peak - (atrM5 * trailMult)
-    // Ratchet: Max of previous trail and new calc
     trailPrice := na(trailPrice) ? calcTrail : math.max(trailPrice, calcTrail)
-else if currentTrend == -1 // Bearish
+else if currentTrend == -1
     peak = low
     calcTrail = peak + (atrM5 * trailMult)
     trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
 
-// Plot Trail
-// Only show if trend is defined and option enabled
 plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=color.orange, style=plot.style_linebr, linewidth=2)
 
-// Trail Exit Alert
 trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
 // =============================================================================
-// TABLE DRAWING
+// SOP INFO PANEL
+// =============================================================================
+sopPos = getPosition(sopPosInput)
+sopSize = getSize(sopSizeInput)
+
+// Text Constants (Tooltips)
+txtWhyM5 = "Why the 5-Minute (M5) is the Standard\n\n1. The 'Noise' Filter: On a 1-minute chart, a 2.5x ATR is often too tight. A single 'stop hunt' or ICT-style 'Judas Swing' will knock you out before the real session move happens.\n\n2. Response Time: On a 15-minute chart, a 3x ATR trail is often too wide. By the time the price crosses it, you may have given back 50–70% of your session gains.\n\n3. The Logic: The 5-minute ATR captures the immediate momentum of the session. If the price pulls back more than 2.5x the average 5-minute candle size, it usually means the 'order flow' has shifted from a trend to a retracement or reversal."
+
+txtEarly = "ATR % Traveled: 0% – 50%\n\nLogic: Give the trade 'breathing room' to develop during the early Kill Zone.\n\nInterpretation: Market is establishing initial range."
+txtLock = "ATR % Traveled: 51% – 85%\n\nLogic: The move is established. Start protecting 'house money.'\n\nInterpretation: Middle of session expansion."
+txtExit = "ATR % Traveled: 86% – 100%+\n\nLogic: The 'gas tank' is nearly empty. Tighten up to lock in profit before the session reversal.\n\nInterpretation: Exhaustion risk high."
+
+if showSop
+    var table sopTable = table.new(sopPos, 4, 5, border_width=1)
+    if barstate.islast
+        // Header
+        table.cell(sopTable, 0, 0, "SOP: Adaptive Trail", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip=txtWhyM5)
+        table.cell(sopTable, 1, 0, "% ATR", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 0, "Mult (M5)", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Base: 5-Minute ATR")
+        table.cell(sopTable, 3, 0, "Phase", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
+
+        // Row 1: Early
+        table.cell(sopTable, 0, 1, "Early", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 1, "0-60%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 1, str.tostring(trailMultLow, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 1, "Breathing Room", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtEarly)
+
+        // Row 2: Lock
+        table.cell(sopTable, 0, 2, "Lock", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 2, "60-90%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 2, str.tostring(trailMultMid, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 2, "Protect", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtLock)
+
+        // Row 3: Exhaustion
+        table.cell(sopTable, 0, 3, "Exit", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 3, ">90%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 3, str.tostring(trailMultHigh, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 3, "Chokehold", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtExit)
+
+        // Footer
+        table.merge_cells(sopTable, 0, 4, 3, 4)
+        table.cell(sopTable, 0, 4, "Hover headers for SOP details", bgcolor=color.new(color.gray, 50), text_color=color.new(sopTextColor, 30), text_size=size.tiny)
+
+// =============================================================================
+// ATR TABLE DRAWING
 // =============================================================================
 var table atr_table = showPrevATR ? table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1) : na
 
 if barstate.islast and showPrevATR
     atrSize = getSize(atrTableSize)
 
-    // Header Logic updated for Kill Zones
     headerText = activeSessionName != "Off-Hours" ? activeSessionName : (isMinuteBased ? str.format("{0}M ATR Analysis", currentMinutes) : "ATR Analysis")
 
     table.cell(atr_table, 0, 0, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
