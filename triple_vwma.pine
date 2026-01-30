@@ -97,6 +97,8 @@ showAdaptiveTrail = input.bool(true, "Show Adaptive Trail", group=grpAdaptive)
 trailMultLow = input.float(3.0, "Early Session Multiplier", group=grpAdaptive)
 trailMultMid = input.float(2.5, "Mid Session Multiplier (60-90%)", group=grpAdaptive)
 trailMultHigh = input.float(1.5, "Exhaustion Multiplier (>90%)", group=grpAdaptive)
+trailColorLong = input.color(color.lime, "Long Trail Color", group=grpAdaptive)
+trailColorShort = input.color(color.red, "Short Trail Color", group=grpAdaptive)
 
 // Session time settings for intraday (Kill Zones)
 grpSessions = "Session Settings (EST)"
@@ -379,7 +381,9 @@ else if currentTrend == -1
     calcTrail = peak + (atrM5 * trailMult)
     trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
 
-plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=color.orange, style=plot.style_linebr, linewidth=2)
+// Plot Trail with Dynamic Color
+colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
+plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
 
 trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
@@ -444,8 +448,6 @@ if showSop
         // Complex string for Trend + Phase
         swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
         table.cell(sopTable, 1, 2, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
-        // Can't do multi-color text in one cell easily, so using base text color.
-        // Could split columns if needed, but requested 2-column layout.
 
         // 4. SCALP ROW (Micro)
         rowBgScalp = isScalpMode ? color.new(color.purple, 80) : colorDim
