@@ -1,5 +1,34 @@
 //@version=6
-indicator("Triple VWMA", shorttitle="3VWMA", overlay=true)
+indicator("Triple VWMA & ATR Table", shorttitle="3VWMA+ATR", overlay=true)
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+getPosition(pos) =>
+    switch pos
+        "Top Left" => position.top_left
+        "Top Center" => position.top_center
+        "Top Right" => position.top_right
+        "Middle Left" => position.middle_left
+        "Middle Center" => position.middle_center
+        "Middle Right" => position.middle_right
+        "Bottom Left" => position.bottom_left
+        "Bottom Center" => position.bottom_center
+        "Bottom Right" => position.bottom_right
+        => position.top_right
+
+getSize(sizeStr) =>
+    switch sizeStr
+        "Tiny" => size.tiny
+        "Small" => size.small
+        "Normal" => size.normal
+        "Large" => size.large
+        "Huge" => size.huge
+        => size.normal
+
+// =============================================================================
+// TRIPLE VWMA SETTINGS
+// =============================================================================
 
 // --- VWMA 1 Settings (Default: 20) ---
 grp1 = "VWMA 1"
@@ -44,47 +73,63 @@ tf3 = input.timeframe("D", "Timeframe 3", group=grpMtf)
 tf4 = input.timeframe("W", "Timeframe 4", group=grpMtf)
 tf5 = input.timeframe("M", "Timeframe 5", group=grpMtf)
 
-// --- Calculations ---
+// =============================================================================
+// ATR TABLE SETTINGS
+// =============================================================================
+grpAtrDisplay = "ATR Table - Display"
+showPrevATR = input.bool(true, title = 'Show Dynamic ATR Analysis Panel', group = grpAtrDisplay)
+showATRDirection = input.bool(true, title = 'Show ATR Directional Tracking', group = grpAtrDisplay)
+showMultiLevelTargets = input.bool(true, title = 'Show Multi-Level ATR Targets', group = grpAtrDisplay)
+atrTablePosition = input.string("Bottom Right", title="ATR Table Position",
+    options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"],
+    group = grpAtrDisplay)
+atrTableSize = input.string("Small", title="ATR Table Text Size",
+    options=["Tiny", "Small", "Normal", "Large", "Huge"], group = grpAtrDisplay)
+
+grpAtrLogic = "ATR Table - Logic"
+atrLength = input.int(14, title = 'ATR Length', minval = 1, group = grpAtrLogic)
+pipMultiplier = input.float(10000, title = 'Pip Multiplier', group = grpAtrLogic,
+    tooltip = '10000 for standard forex, 100 for JPY pairs, 1 for crypto', options=[1, 100, 10000])
+enableATRAlerts = input.bool(true, title = 'Enable ATR Target Alerts', group = grpAtrLogic)
+
+// Session time settings for intraday
+asianSession = input.session("0000-0900", title="Asian Session", group="Session Settings")
+londonSession = input.session("0800-1600", title="London Session", group="Session Settings")
+nySession = input.session("1300-2200", title="New York Session", group="Session Settings")
+
+
+// =============================================================================
+// TRIPLE VWMA CALCULATIONS
+// =============================================================================
 vwma1 = ta.vwma(src1, len1)
 vwma2 = ta.vwma(src2, len2)
 vwma3 = ta.vwma(src3, len3)
 
-// --- Plotting ---
 plot(show1 ? vwma1 : na, title="VWMA 1", color=color1, offset=offset1)
 plot(show2 ? vwma2 : na, title="VWMA 2", color=color2, offset=offset2)
 plot(show3 ? vwma3 : na, title="VWMA 3", color=color3, offset=offset3)
 
-// --- Filter Calculations ---
+// Filter Calculations
 volSma = ta.sma(volume, 10)
 volOk = not useVolFilter or (volume > volSma)
 
-atrVal = ta.atr(14)
-// Define thresholds based on ATR filter
-// If off, threshold is just the VWMA3. If on, it includes the buffer.
-// Note: We apply the buffer to the confirmation candle (current bar).
-upperThreshold = useAtrFilter ? vwma3 + (atrVal * atrMult) : vwma3
-lowerThreshold = useAtrFilter ? vwma3 - (atrVal * atrMult) : vwma3
+// ATR Buffer Logic (for VWMA confirmation)
+// Note: We reuse the ta.atr(14) logic here for the buffer filter, independent of the ATR Table length (though usually same).
+// We'll use the hardcoded 14 from original script or match? The prompt for VWMA upgrade had specific settings.
+// Let's keep the filter ATR independent logic using ta.atr(14) as per previous steps,
+// to avoid breaking the "ATR Buffer Filter" specific logic unless we want to link them?
+// Original Triple VWMA code used ta.atr(14). We will stick to that to preserve behavior.
+atrValFilter = ta.atr(14)
+upperThreshold = useAtrFilter ? vwma3 + (atrValFilter * atrMult) : vwma3
+lowerThreshold = useAtrFilter ? vwma3 - (atrValFilter * atrMult) : vwma3
 
-// --- Trend State & Logic ---
-// We need to track the state to prevent repeated alerts.
-// 1 = Bullish Latch, -1 = Bearish Latch, 0 = Unknown
+// Trend State & Logic
 var int currentTrend = 0
-
-// Break Detection (Candle 1 - Previous Candle)
-// Bullish Break: Open below VWMA3, Close above VWMA3
 breakUp = open[1] < vwma3[1] and close[1] > vwma3[1]
-// Bearish Break: Open above VWMA3, Close below VWMA3
 breakDown = open[1] > vwma3[1] and close[1] < vwma3[1]
-
-// Confirmation Detection (Candle 2 - Current Candle)
-// Must close on the correct side of the threshold
 confirmUp = close > upperThreshold
 confirmDown = close < lowerThreshold
 
-// Combined Signals
-// Must be confirmed bar (barstate.isconfirmed) to fire alerts permanently,
-// but for real-time testing on historical bars we just check conditions.
-// The prompt asked for "State Latch".
 triggerBuy = breakUp and confirmUp and volOk and currentTrend != 1
 triggerSell = breakDown and confirmDown and volOk and currentTrend != -1
 
@@ -93,14 +138,8 @@ if triggerBuy
 if triggerSell
     currentTrend := -1
 
-// --- MTF Dashboard Logic ---
-// We want to see if Price > VWMA3 on other timeframes.
-// We need to calculate VWMA on those timeframes.
-// Note: VWMA requires volume. request.security can fetch the result of a function tuple.
-
-// Helper to calc VWMA on other TF
+// MTF Dashboard Logic
 calcVwma(l, s) => ta.vwma(s, l)
-
 [mtf1_vwma, mtf1_close] = request.security(syminfo.tickerid, tf1, [ta.vwma(src3, len3), close])
 [mtf2_vwma, mtf2_close] = request.security(syminfo.tickerid, tf2, [ta.vwma(src3, len3), close])
 [mtf3_vwma, mtf3_close] = request.security(syminfo.tickerid, tf3, [ta.vwma(src3, len3), close])
@@ -113,7 +152,7 @@ isBull3 = mtf3_close > mtf3_vwma
 isBull4 = mtf4_close > mtf4_vwma
 isBull5 = mtf5_close > mtf5_vwma
 
-// Determine Table Position
+// VWMA Dashboard Table
 dashPos = position.top_right
 if dashPosInput == "Top Left"
     dashPos := position.top_left
@@ -126,40 +165,243 @@ else if dashPosInput == "Middle Right"
 else if dashPosInput == "Middle Left"
     dashPos := position.middle_left
 
-// Draw Table
 if showMtf
     var table mtfTable = table.new(dashPos, 2, 6, border_width=1)
-    // We re-set the table position if it changes (though var table usually sticks to init,
-    // strictly speaking standard practice is to use input to define it at creation or recreate if dynamic.
-    // Since 'var' creates once, we'll need to create it with the variable.
-    // However, table.new(position, ...) works with simple inputs.
-    // Let's create a new one? No, in Pine 'var' runs once.
-    // Actually, table properties can be updated? No, position is set at creation.
-    // Correction: To support changing position, we cannot use 'var table' efficiently if the variable changes?
-    // Wait, inputs are constant for the script execution instance. So 'dashPos' is calculated once at init.
-    // So passing 'dashPos' to 'table.new' inside the var block is correct.
-
     if barstate.islast
-        // Header
         table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 0, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
-
-        // Rows
         table.cell(mtfTable, 0, 1, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 1, isBull1 ? "BULL" : "BEAR", bgcolor=isBull1 ? color.green : color.red, text_color=color.white)
-
         table.cell(mtfTable, 0, 2, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 2, isBull2 ? "BULL" : "BEAR", bgcolor=isBull2 ? color.green : color.red, text_color=color.white)
-
         table.cell(mtfTable, 0, 3, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 3, isBull3 ? "BULL" : "BEAR", bgcolor=isBull3 ? color.green : color.red, text_color=color.white)
-
         table.cell(mtfTable, 0, 4, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 4, isBull4 ? "BULL" : "BEAR", bgcolor=isBull4 ? color.green : color.red, text_color=color.white)
-
         table.cell(mtfTable, 0, 5, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 5, isBull5 ? "BULL" : "BEAR", bgcolor=isBull5 ? color.green : color.red, text_color=color.white)
 
-// --- Alerts ---
+// =============================================================================
+// ATR TABLE LOGIC & CALCULATIONS
+// =============================================================================
+isMonthly = timeframe.ismonthly
+isWeekly = timeframe.isweekly
+isDaily = timeframe.isdaily
+isIntraday = timeframe.isintraday
+
+getCurrentMinutes() =>
+    if timeframe.isminutes
+        timeframe.multiplier
+    else if timeframe.isseconds
+        timeframe.multiplier / 60
+    else
+        0
+
+currentMinutes = getCurrentMinutes()
+isHourly = isIntraday and currentMinutes >= 60 and currentMinutes < 1440
+is4Hour = currentMinutes == 240
+isMinuteBased = isIntraday and currentMinutes > 0 and currentMinutes < 60
+
+getATRTimeframe() =>
+    if isMonthly
+        "M"
+    else if isWeekly
+        "W"
+    else if isDaily
+        "D"
+    else if is4Hour or isHourly
+        "240"
+    else if isMinuteBased
+        timeframe.period
+    else
+        "D"
+
+atrTimeframe = getATRTimeframe()
+
+inAsianSession = not na(time(timeframe.period, asianSession))
+inLondonSession = not na(time(timeframe.period, londonSession))
+inNYSession = not na(time(timeframe.period, nySession))
+
+getActiveSession() =>
+    result = "Off-Hours"
+    if inNYSession
+        result := "New York"
+    else if inLondonSession
+        result := "London"
+    else if inAsianSession
+        result := "Asian"
+    result
+
+activeSession = getActiveSession()
+
+var float sessionOpen = open
+var bool newSession = false
+
+prevSession = activeSession[1]
+bool isIntradayHourlyOr4Hour = isIntraday and (isHourly or is4Hour)
+bool sessionChanged = activeSession != prevSession and not na(prevSession)
+newSession := isIntradayHourlyOr4Hour and sessionChanged
+
+if barstate.isfirst
+    sessionOpen := open
+else if newSession
+    sessionOpen := open
+else if not isIntradayHourlyOr4Hour and (isDaily or isWeekly or isMonthly)
+    sessionOpen := open
+
+[periodOpen, periodATR, period_atr_prev, period_atr_current] = request.security(
+    syminfo.tickerid,
+    atrTimeframe,
+    [open, ta.atr(atrLength), ta.atr(atrLength)[1], ta.atr(atrLength)],
+    lookahead = barmerge.lookahead_off)
+
+referenceOpen = (isIntraday and (isHourly or is4Hour)) ? sessionOpen : periodOpen
+referenceATR = periodATR
+
+atrMeanPips = referenceATR * pipMultiplier
+
+bullishMove = (close > referenceOpen) ? (close - referenceOpen) * pipMultiplier : 0
+bearishMove = (close < referenceOpen) ? (referenceOpen - close) * pipMultiplier : 0
+currentDirectionalPips = bullishMove > 0 ? bullishMove : bearishMove
+
+moveFromOpen = math.abs(close - referenceOpen)
+percentReached = referenceATR != 0 ? (moveFromOpen / referenceATR) * 100 : 0
+
+getTargetMultipliers() =>
+    if isMonthly
+        [0.5, 1.0, 1.5, 2.0]
+    else if isWeekly
+        [0.5, 0.75, 1.0, 1.5]
+    else if isDaily
+        [0.5, 0.75, 1.0, 1.5]
+    else if isHourly or is4Hour
+        [0.3, 0.5, 0.75, 1.0]
+    else
+        [0.25, 0.5, 0.75, 1.0]
+
+[mult1, mult2, mult3, mult4] = getTargetMultipliers()
+
+upperTarget_1 = referenceOpen + (referenceATR * mult1)
+upperTarget_2 = referenceOpen + (referenceATR * mult2)
+upperTarget_3 = referenceOpen + (referenceATR * mult3)
+upperTarget_4 = referenceOpen + (referenceATR * mult4)
+
+lowerTarget_1 = referenceOpen - (referenceATR * mult1)
+lowerTarget_2 = referenceOpen - (referenceATR * mult2)
+lowerTarget_3 = referenceOpen - (referenceATR * mult3)
+lowerTarget_4 = referenceOpen - (referenceATR * mult4)
+
+targetReached = currentDirectionalPips >= atrMeanPips
+
+// ATR Table Draw
+var table atr_table = showPrevATR ? table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1) : na
+
+if barstate.islast and showPrevATR
+    atrSize = getSize(atrTableSize)
+
+    headerText = ""
+    if isMonthly
+        headerText := "Monthly ATR Analysis"
+    else if isWeekly
+        headerText := "Weekly ATR Analysis"
+    else if isDaily
+        headerText := "Daily ATR Analysis"
+    else if isHourly or is4Hour
+        headerText := activeSession + " Session ATR"
+    else
+        headerText := str.format("{0}M ATR Analysis", currentMinutes)
+
+    table.cell(atr_table, 0, 0, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, 0, "", bgcolor = color.new(color.blue, 20))
+
+    table.cell(atr_table, 0, 1, "Prev Period ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, 1, str.format('{0, number, #.#####}', period_atr_prev), bgcolor = color.new(color.black, 10), text_color = color.yellow, text_size = atrSize)
+
+    table.cell(atr_table, 0, 2, "Current ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+
+    atr_change = period_atr_current - period_atr_prev
+    atr_change_pct = period_atr_prev != 0 ? (atr_change / period_atr_prev) * 100 : 0
+    atr_cell_color = atr_change > 0 ? color.new(color.red, 30) : color.new(color.green, 30)
+
+    table.cell(atr_table, 1, 2, str.format('{0, number, #.#####} ({1, number, +#.##;-#.##}%)', period_atr_current, atr_change_pct),
+        bgcolor = atr_cell_color, text_color = color.white, text_size = atrSize)
+
+    if showATRDirection
+        table.cell(atr_table, 0, 3, str.format("{0}-Period ATR Avg", atrLength), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, 3, str.format('{0, number, #.##} pips', atrMeanPips), bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = atrSize)
+
+        table.cell(atr_table, 0, 4, "Current Direction", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        direction_color = bullishMove > 0 ? color.new(color.green, 30) : color.new(color.red, 30)
+        direction_icon = bullishMove > 0 ? "▲" : "▼"
+        table.cell(atr_table, 1, 4, str.format('{0} {1, number, #.##} pips', direction_icon, currentDirectionalPips),
+            bgcolor = direction_color, text_color = color.white, text_size = atrSize)
+
+        table.cell(atr_table, 0, 5, "% ATR Reached", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        pct_color = percentReached >= 100 ? color.new(color.yellow, 30) : percentReached >= 75 ? color.new(color.orange, 30) : percentReached >= 50 ? color.new(color.blue, 30) : color.new(color.gray, 50)
+        table.cell(atr_table, 1, 5, str.format('{0, number, #.#}%', percentReached), bgcolor = pct_color, text_color = color.white, text_size = atrSize)
+
+        table.cell(atr_table, 0, 6, "Target Reached?", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        target_status = targetReached ? "✓ YES" : "✗ NO"
+        target_color = targetReached ? color.new(color.green, 30) : color.new(color.gray, 50)
+        table.cell(atr_table, 1, 6, target_status, bgcolor = target_color, text_color = color.white, text_size = atrSize)
+
+        if isIntraday and (isHourly or is4Hour)
+            table.cell(atr_table, 0, 7, "Active Session", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            session_color = color.new(color.gray, 50)
+            if inNYSession
+                session_color := color.new(color.blue, 30)
+            else if inLondonSession
+                session_color := color.new(color.green, 30)
+            else if inAsianSession
+                session_color := color.new(color.yellow, 30)
+            table.cell(atr_table, 1, 7, activeSession, bgcolor = session_color, text_color = color.white, text_size = atrSize)
+
+        if showMultiLevelTargets
+            row_offset = (isIntraday and (isHourly or is4Hour)) ? 1 : 0
+
+            bullish_direction = close > referenceOpen
+            target_1_hit = bullish_direction ? high >= upperTarget_1 : low <= lowerTarget_1
+            target_2_hit = bullish_direction ? high >= upperTarget_2 : low <= lowerTarget_2
+            target_3_hit = bullish_direction ? high >= upperTarget_3 : low <= lowerTarget_3
+            target_4_hit = bullish_direction ? high >= upperTarget_4 : low <= lowerTarget_4
+
+            table.cell(atr_table, 0, 7 + row_offset, str.format("{0}x ATR Target", mult1), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 7 + row_offset, target_1_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left',
+                bullish_direction ? (upperTarget_1 - close) * pipMultiplier : (close - lowerTarget_1) * pipMultiplier),
+                bgcolor = target_1_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+
+            table.cell(atr_table, 0, 8 + row_offset, str.format("{0}x ATR Target", mult2), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 8 + row_offset, target_2_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left',
+                bullish_direction ? (upperTarget_2 - close) * pipMultiplier : (close - lowerTarget_2) * pipMultiplier),
+                bgcolor = target_2_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+
+            table.cell(atr_table, 0, 9 + row_offset, str.format("{0}x ATR Target", mult3), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 9 + row_offset, target_3_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left',
+                bullish_direction ? (upperTarget_3 - close) * pipMultiplier : (close - lowerTarget_3) * pipMultiplier),
+                bgcolor = target_3_hit ? color.new(color.yellow, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+
+            table.cell(atr_table, 0, 10 + row_offset, str.format("{0}x ATR Target", mult4), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 10 + row_offset, target_4_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left',
+                bullish_direction ? (upperTarget_4 - close) * pipMultiplier : (close - lowerTarget_4) * pipMultiplier),
+                bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+
+// =============================================================================
+// ALERTS (VWMA + ATR)
+// =============================================================================
 alertcondition(triggerBuy, title="Bullish Trend Shift", message="🚨 BULLISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Above 200 VWMA.\nPrice: {{close}}")
 alertcondition(triggerSell, title="Bearish Trend Shift", message="⚠️ BEARISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Below 200 VWMA.\nPrice: {{close}}")
+
+if targetReached and enableATRAlerts and barstate.isconfirmed
+    alert("ATR Target Reached: " + str.tostring(currentDirectionalPips, "#.##") +
+          " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
+          alert.freq_once_per_bar)
+
+alertcondition(ta.crossover(high, upperTarget_1), title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_2), title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_3), title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_4), title="Target 4 Hit (Up)", message="ATR target 4 reached (upside)")
+
+alertcondition(ta.crossunder(low, lowerTarget_1), title="Target 1 Hit (Down)", message="ATR target 1 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_2), title="Target 2 Hit (Down)", message="ATR target 2 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_3), title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_4), title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
