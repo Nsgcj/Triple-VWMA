@@ -34,6 +34,7 @@ atrMult = input.float(0.5, "ATR Multiplier", minval=0.1, step=0.1, group=grpTren
 // --- MTF Dashboard Settings ---
 grpMtf = "MTF Dashboard"
 showMtf = input.bool(true, "Show Dashboard", group=grpMtf)
+dashPosInput = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=grpMtf)
 dashTextColor = input.color(color.white, "Text Color", group=grpMtf)
 dashBgColor = input.color(color.new(color.gray, 50), "Background Color", group=grpMtf)
 
@@ -112,9 +113,32 @@ isBull3 = mtf3_close > mtf3_vwma
 isBull4 = mtf4_close > mtf4_vwma
 isBull5 = mtf5_close > mtf5_vwma
 
+// Determine Table Position
+dashPos = position.top_right
+if dashPosInput == "Top Left"
+    dashPos := position.top_left
+else if dashPosInput == "Bottom Right"
+    dashPos := position.bottom_right
+else if dashPosInput == "Bottom Left"
+    dashPos := position.bottom_left
+else if dashPosInput == "Middle Right"
+    dashPos := position.middle_right
+else if dashPosInput == "Middle Left"
+    dashPos := position.middle_left
+
 // Draw Table
 if showMtf
-    var table mtfTable = table.new(position.top_right, 2, 6, border_width=1)
+    var table mtfTable = table.new(dashPos, 2, 6, border_width=1)
+    // We re-set the table position if it changes (though var table usually sticks to init,
+    // strictly speaking standard practice is to use input to define it at creation or recreate if dynamic.
+    // Since 'var' creates once, we'll need to create it with the variable.
+    // However, table.new(position, ...) works with simple inputs.
+    // Let's create a new one? No, in Pine 'var' runs once.
+    // Actually, table properties can be updated? No, position is set at creation.
+    // Correction: To support changing position, we cannot use 'var table' efficiently if the variable changes?
+    // Wait, inputs are constant for the script execution instance. So 'dashPos' is calculated once at init.
+    // So passing 'dashPos' to 'table.new' inside the var block is correct.
+
     if barstate.islast
         // Header
         table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
