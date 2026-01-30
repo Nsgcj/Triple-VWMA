@@ -1,5 +1,5 @@
 //@version=6
-indicator("Triple VWMA & ATR Table", shorttitle="3VWMA+ATR", overlay=true, max_bars_back = 500, max_lines_count = 400)
+indicator("Triple VWMA & ATR Table (w/ Ranging Logic)", shorttitle="3VWMA+ATR+Rng", overlay=true, max_bars_back = 500, max_lines_count = 400)
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -59,6 +59,14 @@ grpTrend = "Trend Logic (VWMA 3)"
 useVolFilter = input.bool(false, "Volume Surge Filter (> SMA 10)", group=grpTrend)
 useAtrFilter = input.bool(false, "ATR Buffer Filter", group=grpTrend)
 atrMult = input.float(0.5, "ATR Multiplier", minval=0.1, step=0.1, group=grpTrend)
+
+// --- RANGING LOGIC SETTINGS ---
+grpRange = "Ranging / Flat Logic"
+useChop = input.bool(true, "Use Choppiness Index (Reset Trend)", group=grpRange)
+chopLen = input.int(14, "Choppiness Length", group=grpRange)
+chopThresh = input.float(61.8, "Choppiness Threshold (Standard: 61.8)", group=grpRange)
+useHug = input.bool(true, "Use VWMA Hug (Consolidation)", group=grpRange)
+hugThresh = input.float(0.15, "Hug Threshold % (Dist from VWMA 3)", step=0.05, group=grpRange)
 
 // --- MTF Dashboard Settings ---
 grpMtf = "MTF Dashboard"
@@ -150,67 +158,100 @@ plot(show3 ? vwma3 : na, title="VWMA 3", color=color3, offset=offset3)
 volSma = ta.sma(volume, 10)
 volOk = not useVolFilter or (volume > volSma)
 
-// ATR Buffer Logic (for VWMA confirmation)
+// ATR Buffer Logic
 atrValFilter = ta.atr(14)
 upperThreshold = useAtrFilter ? vwma3 + (atrValFilter * atrMult) : vwma3
 lowerThreshold = useAtrFilter ? vwma3 - (atrValFilter * atrMult) : vwma3
 
+// --- RANGING CALCULATIONS ---
+// 1. Choppiness Index (Range 0-100. >61.8 = Ranging)
+log10(x) => math.log(x) / math.log(10)
+// Calc CI
+atrSum = math.sum(ta.atr(1), chopLen)
+highestHigh = ta.highest(chopLen)
+lowestLow = ta.lowest(chopLen)
+denom = highestHigh - lowestLow
+ci = denom > 0 ? 100 * log10(atrSum / denom) / log10(chopLen) : 0
+isChoppy = useChop and ci > chopThresh
+
+// 2. VWMA Hug (Distance from VWMA 3 < Threshold %)
+distToVwma = math.abs(close - vwma3)
+distPct = (distToVwma / vwma3) * 100
+isHugging = useHug and distPct < hugThresh
+
+// Combined Ranging Logic
+isRanging = isChoppy or isHugging
+
 // Trend State & Logic
-var int currentTrend = 0
+var int currentTrend = 0 // 0=Flat, 1=Bull, -1=Bear
+
+// Trigger Conditions
 breakUp = open[1] < vwma3[1] and close[1] > vwma3[1]
 breakDown = open[1] > vwma3[1] and close[1] < vwma3[1]
 confirmUp = close > upperThreshold
 confirmDown = close < lowerThreshold
 
-triggerBuy = breakUp and confirmUp and volOk and currentTrend != 1
-triggerSell = breakDown and confirmDown and volOk and currentTrend != -1
+triggerBuy = breakUp and confirmUp and volOk and not isRanging
+triggerSell = breakDown and confirmDown and volOk and not isRanging
 
-if triggerBuy
+// State Machine Update
+if isRanging
+    currentTrend := 0
+else if triggerBuy
     currentTrend := 1
-if triggerSell
+else if triggerSell
     currentTrend := -1
 
-// MTF Dashboard Logic
+// =============================================================================
+// MTF DASHBOARD
+// =============================================================================
 [mtf1_vwma, mtf1_close] = request.security(syminfo.tickerid, tf1, [ta.vwma(src3, len3), close])
 [mtf2_vwma, mtf2_close] = request.security(syminfo.tickerid, tf2, [ta.vwma(src3, len3), close])
 [mtf3_vwma, mtf3_close] = request.security(syminfo.tickerid, tf3, [ta.vwma(src3, len3), close])
 [mtf4_vwma, mtf4_close] = request.security(syminfo.tickerid, tf4, [ta.vwma(src3, len3), close])
 [mtf5_vwma, mtf5_close] = request.security(syminfo.tickerid, tf5, [ta.vwma(src3, len3), close])
 
-isBull1 = mtf1_close > mtf1_vwma
-isBull2 = mtf2_close > mtf2_vwma
-isBull3 = mtf3_close > mtf3_vwma
-isBull4 = mtf4_close > mtf4_vwma
-isBull5 = mtf5_close > mtf5_vwma
+// Helper for MTF color/text
+getTrendStatus(cls, vwm) =>
+    dist = math.abs(cls - vwm)
+    pct = (dist / vwm) * 100
+    if pct < 0.1
+        "FLAT"
+    else
+        cls > vwm ? "BULL" : "BEAR"
+
+getTrendColor(status) =>
+    if status == "FLAT"
+        color.gray
+    else if status == "BULL"
+        color.green
+    else
+        color.red
 
 // VWMA Dashboard Table
-dashPos = position.top_right
-if dashPosInput == "Top Left"
-    dashPos := position.top_left
-else if dashPosInput == "Bottom Right"
-    dashPos := position.bottom_right
-else if dashPosInput == "Bottom Left"
-    dashPos := position.bottom_left
-else if dashPosInput == "Middle Right"
-    dashPos := position.middle_right
-else if dashPosInput == "Middle Left"
-    dashPos := position.middle_left
+dashPos = getPosition(dashPosInput)
+var table mtfTable = table.new(dashPos, 2, 6, border_width=1)
 
-if showMtf
-    var table mtfTable = table.new(dashPos, 2, 6, border_width=1)
-    if barstate.islast
-        table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 0, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 0, 1, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 1, isBull1 ? "BULL" : "BEAR", bgcolor=isBull1 ? color.green : color.red, text_color=color.white)
-        table.cell(mtfTable, 0, 2, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 2, isBull2 ? "BULL" : "BEAR", bgcolor=isBull2 ? color.green : color.red, text_color=color.white)
-        table.cell(mtfTable, 0, 3, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 3, isBull3 ? "BULL" : "BEAR", bgcolor=isBull3 ? color.green : color.red, text_color=color.white)
-        table.cell(mtfTable, 0, 4, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 4, isBull4 ? "BULL" : "BEAR", bgcolor=isBull4 ? color.green : color.red, text_color=color.white)
-        table.cell(mtfTable, 0, 5, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
-        table.cell(mtfTable, 1, 5, isBull5 ? "BULL" : "BEAR", bgcolor=isBull5 ? color.green : color.red, text_color=color.white)
+if showMtf and barstate.islast
+    table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 0, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
+
+    s1 = getTrendStatus(mtf1_close, mtf1_vwma)
+    s2 = getTrendStatus(mtf2_close, mtf2_vwma)
+    s3 = getTrendStatus(mtf3_close, mtf3_vwma)
+    s4 = getTrendStatus(mtf4_close, mtf4_vwma)
+    s5 = getTrendStatus(mtf5_close, mtf5_vwma)
+
+    table.cell(mtfTable, 0, 1, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 1, s1, bgcolor=getTrendColor(s1), text_color=color.white)
+    table.cell(mtfTable, 0, 2, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 2, s2, bgcolor=getTrendColor(s2), text_color=color.white)
+    table.cell(mtfTable, 0, 3, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 3, s3, bgcolor=getTrendColor(s3), text_color=color.white)
+    table.cell(mtfTable, 0, 4, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 4, s4, bgcolor=getTrendColor(s4), text_color=color.white)
+    table.cell(mtfTable, 0, 5, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 5, s5, bgcolor=getTrendColor(s5), text_color=color.white)
 
 // =============================================================================
 // ATR TABLE LOGIC & CALCULATIONS
@@ -342,7 +383,6 @@ targetReached = currentDirectionalPips >= atrMeanPips
 // =============================================================================
 // OFF-HOURS SCALPING LOGIC (M1 Trend)
 // =============================================================================
-// Updated to use VWMA 5/21 on M1 for Scalp Trend
 [m1Close, m1High, m1Low, m1Vwma5, m1Vwma21] = request.security(syminfo.tickerid, "1", [close, high, low, ta.vwma(close, 5), ta.vwma(close, 21)])
 m15ATR = request.security(syminfo.tickerid, "15", ta.atr(14))
 
@@ -381,6 +421,11 @@ else
     trailMult := trailMultHigh
 
 var float trailPrice = na
+
+// Reset trail if ranging/flat
+if currentTrend == 0
+    trailPrice := na
+
 if triggerBuy
     trailPrice := low - (atrM5 * trailMult)
 else if triggerSell
@@ -418,9 +463,17 @@ bgLock = isLock ? colorLock : colorDim
 bgExit = isExit ? colorExit : colorDim
 
 txtSwing = isEarly ? "Early" : (isLock ? "Lock" : "Exit")
-iconSwing = currentTrend == 1 ? "🟢 BULL" : (currentTrend == -1 ? "🔴 BEAR" : "⚪ FLAT")
+
+// -- UPDATED ICON LOGIC --
+iconSwing = ""
+if currentTrend == 1
+    iconSwing := "🟢 BULL"
+else if currentTrend == -1
+    iconSwing := "🔴 BEAR"
+else
+    iconSwing := "⚪ FLAT"
+
 colorSwingText = currentTrend == 1 ? color.lime : (currentTrend == -1 ? color.red : color.gray)
-colorSwingPhase = isEarly ? color.aqua : (isLock ? color.yellow : color.red)
 
 // Scalp Mode Logic (Thresholds: <40 Early, 40-80 Hold, >80 Exhaust)
 isScalpEarly = scalpCompletion < 40
@@ -434,52 +487,53 @@ bgSX = isScalpExhaust ? colorExit : colorDim
 txtScalp = isScalpEarly ? "Early" : (isScalpHold ? "Hold" : "Exhaust")
 iconScalp = m1Trend == 1 ? "🟢 BULL" : "🔴 BEAR"
 colorScalpText = m1Trend == 1 ? color.lime : color.red
-colorScalpPhase = isScalpEarly ? color.aqua : (isScalpHold ? color.yellow : color.red)
 
-if showSop
-    // 2-Column Table (Header + SubHeader + Swing + Scalp + Footer)
-    // Structure: 2 Columns, 5 Rows.
-    var table sopTable = table.new(sopPos, 2, 5, border_width=1)
-    if barstate.islast
-        // 1. STATUS HEADER
-        statusText = isScalpMode ? ">> SCALP MODE <<" : ">> SESSION MODE <<"
-        statusColor = isScalpMode ? color.new(color.orange, 20) : color.new(color.lime, 20)
-        table.cell(sopTable, 0, 0, "CURRENT STATUS:", bgcolor=color.new(color.black, 10), text_color=color.white, text_size=sopSize)
-        table.cell(sopTable, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=sopSize)
+// Fixed Table Init
+var table sopTable = table.new(sopPos, 2, 6, border_width=1)
 
-        // 2. SUB-HEADER
-        table.cell(sopTable, 0, 1, "ANALYSIS TYPE", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
-        table.cell(sopTable, 1, 1, "TREND | PHASE (%)", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
+if showSop and barstate.islast
+    // 1. STATUS HEADER
+    statusText = isScalpMode ? ">> SCALP MODE <<" : ">> SESSION MODE <<"
+    statusColor = isScalpMode ? color.new(color.orange, 20) : color.new(color.lime, 20)
+    table.cell(sopTable, 0, 0, "CURRENT STATUS:", bgcolor=color.new(color.black, 10), text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=sopSize)
 
-        // 3. SWING ROW (Session)
-        // Highlight if !isScalpMode (Session Active)
-        rowBgSwing = isScalpMode ? colorDim : color.new(color.green, 90) // Dim if inactive
-        textAlphaSwing = isScalpMode ? 50 : 0
+    // 2. SUB-HEADER
+    table.cell(sopTable, 0, 1, "ANALYSIS TYPE", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 1, 1, "TREND | PHASE (%)", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
 
-        table.cell(sopTable, 0, 2, "SWING (SESSION)", bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
+    // 3. SWING ROW
+    rowBgSwing = isScalpMode ? colorDim : color.new(color.green, 90)
+    textAlphaSwing = isScalpMode ? 50 : 0
 
-        // Complex string for Trend + Phase
-        swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
-        table.cell(sopTable, 1, 2, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
+    table.cell(sopTable, 0, 2, "SWING (SESSION)", bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
 
-        // 4. SCALP ROW (Micro)
-        rowBgScalp = isScalpMode ? color.new(color.purple, 80) : colorDim
-        textAlphaScalp = isScalpMode ? 0 : 50
+    swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
 
-        table.cell(sopTable, 0, 3, "SCALP (1-MIN)", bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+    // If Flat, show reason
+    if currentTrend == 0
+        swingContent := "⚪ FLAT | " + (isChoppy ? "CHOP" : "CONSOL")
 
-        scalpContent = iconScalp + " | " + txtScalp + " (" + str.tostring(scalpCompletion, "#") + "%)"
-        table.cell(sopTable, 1, 3, scalpContent, bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+    table.cell(sopTable, 1, 2, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
 
-        // 5. FOOTER (Active Logic Reminder)
-        footerText = isScalpMode ? "Focus: Counter-Trend or Scalp Drives" : "Focus: Trend Extension & Trail Management"
-        table.merge_cells(sopTable, 0, 4, 1, 4)
-        table.cell(sopTable, 0, 4, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
+    // 4. SCALP ROW
+    rowBgScalp = isScalpMode ? color.new(color.purple, 80) : colorDim
+    textAlphaScalp = isScalpMode ? 0 : 50
+
+    table.cell(sopTable, 0, 3, "SCALP (1-MIN)", bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+    scalpContent = iconScalp + " | " + txtScalp + " (" + str.tostring(scalpCompletion, "#") + "%)"
+    table.cell(sopTable, 1, 3, scalpContent, bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+
+    // 5. FOOTER
+    footerText = isScalpMode ? "Focus: Counter-Trend or Scalp Drives" : "Focus: Trend Extension & Trail Management"
+    table.merge_cells(sopTable, 0, 4, 1, 4)
+    table.cell(sopTable, 0, 4, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
 
 // =============================================================================
 // ATR TABLE DRAWING
 // =============================================================================
-var table atr_table = showPrevATR ? table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1) : na
+// Fixed Table Init
+var table atr_table = table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1)
 
 if barstate.islast and showPrevATR
     atrSize = getSize(atrTableSize)
@@ -563,23 +617,18 @@ if barstate.islast and showPrevATR
 // =============================================================================
 // BREAKOUT FINDER LOGIC
 // =============================================================================
-// Width calculation
 lll = math.max(math.min(bar_index, 300), 1)
 float h_ = ta.highest(lll)
 float l_ = ta.lowest(lll)
 float chwidth = (h_ - l_) * cwidthu
-
-// Pivot detection
 ph = ta.pivothigh(prd, prd)
 pl = ta.pivotlow(prd, prd)
 
-// Pivot Arrays
 var phval = array.new_float(0)
 var phloc = array.new_int(0)
 var plval = array.new_float(0)
 var plloc = array.new_int(0)
 
-// Array management
 if not na(ph)
     array.unshift(phval, ph)
     array.unshift(phloc, bar_index - prd)
@@ -598,7 +647,6 @@ if not na(pl)
                 array.pop(plloc)
                 array.pop(plval)
 
-// Check Bullish Cup
 float bomax = na
 int bostart = bar_index
 num = 0
@@ -611,19 +659,16 @@ if array.size(phval) >= mintest and close > open and close > hgst
             break
         xx := x
         bomax := math.max(bomax, array.get(phval, x))
-
     if xx >= mintest and open <= bomax
         for x = 0 to xx by 1
             if array.get(phval, x) <= bomax and array.get(phval, x) >= bomax - chwidth
                 num := num + 1
                 bostart := array.get(phloc, x)
-
         if num < mintest or hgst >= bomax
             bomax := na
 
-// Check Bearish Cup
 float bomin = na
-bostart1 = bar_index // Use new variable to avoid conflict with logic above
+bostart1 = bar_index
 num1 = 0
 lwst = ta.lowest(prd)[1]
 if array.size(plval) >= mintest and close < open and close < lwst
@@ -634,17 +679,14 @@ if array.size(plval) >= mintest and close < open and close < lwst
             break
         xx := x
         bomin := math.min(bomin, array.get(plval, x))
-
     if xx >= mintest and open >= bomin
         for x = 0 to xx by 1
             if array.get(plval, x) >= bomin and array.get(plval, x) <= bomin + chwidth
                 num1 := num1 + 1
                 bostart1 := array.get(plloc, x)
-
         if num1 < mintest or lwst <= bomin
             bomin := na
 
-// Drawing and Alerts
 isBreakout = not na(bomax) and num >= mintest
 isBreakdown = not na(bomin) and num1 >= mintest
 
@@ -665,16 +707,13 @@ plotshape(showBF and isBreakout, location = location.belowbar, style = shape.tri
 plotshape(showBF and isBreakdown, location = location.abovebar, style = shape.triangledown, color = bocolordown, size = size.small)
 
 // =============================================================================
-// ALERTS (ALL MODULES)
+// ALERTS
 // =============================================================================
-// 1. Triple VWMA Trend Logic
 alertcondition(triggerBuy, title="Bullish Trend Shift", message="🚨 BULLISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Above 200 VWMA.\nPrice: {{close}}")
 alertcondition(triggerSell, title="Bearish Trend Shift", message="⚠️ BEARISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Below 200 VWMA.\nPrice: {{close}}")
+alertcondition(trailExit, title="Adaptive Trail Exit", message="🚨 ADAPTIVE TRAIL EXIT: {{ticker}}\nPrice Crossed Trailing Stop.")
+alertcondition(isRanging, title="Market Chopping/Ranging", message="⚪ Market is now RANGING/FLAT. Trend reset.")
 
-// 2. Adaptive Trail
-alertcondition(trailExit, title="Adaptive Trail Exit", message="🚨 ADAPTIVE TRAIL EXIT: {{ticker}}\nPrice Crossed Trailing Stop.\nExhaustion: {{plot('Adaptive Trail')}}")
-
-// 3. ATR Targets
 if targetReached and enableATRAlerts and barstate.isconfirmed
     alert("ATR Target Reached: " + str.tostring(currentDirectionalPips, "#.##") +
           " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
@@ -690,7 +729,6 @@ alertcondition(ta.crossunder(low, lowerTarget_2), title="Target 2 Hit (Down)", m
 alertcondition(ta.crossunder(low, lowerTarget_3), title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
 alertcondition(ta.crossunder(low, lowerTarget_4), title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
 
-// 4. Breakout Finder
 alertcondition(isBreakout, title = 'Breakout', message = 'Breakout')
 alertcondition(isBreakdown, title = 'Breakdown', message = 'Breakdown')
 alertcondition(isBreakout or isBreakdown, title = 'Breakout or Breakdown', message = 'Breakout or Breakdown')
