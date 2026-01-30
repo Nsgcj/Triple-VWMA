@@ -1,5 +1,5 @@
 //@version=6
-indicator("Triple VWMA & ATR Table", shorttitle="3VWMA+ATR", overlay=true)
+indicator("Triple VWMA & ATR Table", shorttitle="3VWMA+ATR", overlay=true, max_bars_back = 500, max_lines_count = 400)
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -121,6 +121,19 @@ colorEarly = color.new(color.aqua, 20)
 colorLock = color.new(color.lime, 20)
 colorExit = color.new(color.red, 20)
 colorDim = color.new(color.gray, 70)
+
+// =============================================================================
+// BREAKOUT FINDER SETTINGS
+// =============================================================================
+grpBF = "Breakout Finder"
+showBF = input.bool(true, "Show Breakout Finder", group=grpBF)
+prd = input.int(defval = 5, title = 'Period', minval = 2, group=grpBF)
+bo_len = input.int(defval = 200, title = 'Max Breakout Length', minval = 30, maxval = 300, group=grpBF)
+cwidthu = input.float(defval = 3., title = 'Threshold Rate %', minval = 1., maxval = 10, group=grpBF) / 100
+mintest = input.int(defval = 2, title = 'Minimum Number of Tests', minval = 1, group=grpBF)
+bocolorup = input.color(defval = color.blue, title = 'Breakout Colors', inline = 'bocol', group=grpBF)
+bocolordown = input.color(defval = color.red, title = '', inline = 'bocol', group=grpBF)
+lstyle = input.string(defval = line.style_solid, title = 'Line Style', options = [line.style_solid, line.style_dashed, line.style_dotted], group=grpBF)
 
 // =============================================================================
 // TRIPLE VWMA CALCULATIONS
@@ -548,23 +561,106 @@ if barstate.islast and showPrevATR
                 bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
 
 // =============================================================================
-// ALERTS (VWMA + ATR)
+// BREAKOUT FINDER LOGIC
 // =============================================================================
-alertcondition(triggerBuy, title="Bullish Trend Shift", message="🚨 BULLISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Above 200 VWMA.\nPrice: {{close}}")
-alertcondition(triggerSell, title="Bearish Trend Shift", message="⚠️ BEARISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Below 200 VWMA.\nPrice: {{close}}")
-alertcondition(trailExit, title="Adaptive Trail Exit", message="🚨 ADAPTIVE TRAIL EXIT: {{ticker}}\nPrice Crossed Trailing Stop.\nExhaustion: {{plot('Adaptive Trail')}}")
+// Width calculation
+lll = math.max(math.min(bar_index, 300), 1)
+float h_ = ta.highest(lll)
+float l_ = ta.lowest(lll)
+float chwidth = (h_ - l_) * cwidthu
 
-if targetReached and enableATRAlerts and barstate.isconfirmed
-    alert("ATR Target Reached: " + str.tostring(currentDirectionalPips, "#.##") +
-          " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
-          alert.freq_once_per_bar)
+// Pivot detection
+ph = ta.pivothigh(prd, prd)
+pl = ta.pivotlow(prd, prd)
 
-alertcondition(ta.crossover(high, upperTarget_1), title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_2), title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_3), title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_4), title="Target 4 Hit (Up)", message="ATR target 4 reached (upside)")
+// Pivot Arrays
+var phval = array.new_float(0)
+var phloc = array.new_int(0)
+var plval = array.new_float(0)
+var plloc = array.new_int(0)
 
-alertcondition(ta.crossunder(low, lowerTarget_1), title="Target 1 Hit (Down)", message="ATR target 1 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_2), title="Target 2 Hit (Down)", message="ATR target 2 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_3), title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_4), title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
+// Array management
+if not na(ph)
+    array.unshift(phval, ph)
+    array.unshift(phloc, bar_index - prd)
+    if array.size(phval) > 1
+        for x = array.size(phloc) - 1 to 1 by 1
+            if bar_index - array.get(phloc, x) > bo_len
+                array.pop(phloc)
+                array.pop(phval)
+
+if not na(pl)
+    array.unshift(plval, pl)
+    array.unshift(plloc, bar_index - prd)
+    if array.size(plval) > 1
+        for x = array.size(plloc) - 1 to 1 by 1
+            if bar_index - array.get(plloc, x) > bo_len
+                array.pop(plloc)
+                array.pop(plval)
+
+// Check Bullish Cup
+float bomax = na
+int bostart = bar_index
+num = 0
+hgst = ta.highest(prd)[1]
+if array.size(phval) >= mintest and close > open and close > hgst
+    bomax := array.get(phval, 0)
+    xx = 0
+    for x = 0 to array.size(phval) - 1 by 1
+        if array.get(phval, x) >= close
+            break
+        xx := x
+        bomax := math.max(bomax, array.get(phval, x))
+
+    if xx >= mintest and open <= bomax
+        for x = 0 to xx by 1
+            if array.get(phval, x) <= bomax and array.get(phval, x) >= bomax - chwidth
+                num := num + 1
+                bostart := array.get(phloc, x)
+
+        if num < mintest or hgst >= bomax
+            bomax := na
+
+// Check Bearish Cup
+float bomin = na
+bostart1 = bar_index // Use new variable to avoid conflict with logic above
+num1 = 0
+lwst = ta.lowest(prd)[1]
+if array.size(plval) >= mintest and close < open and close < lwst
+    bomin := array.get(plval, 0)
+    xx = 0
+    for x = 0 to array.size(plval) - 1 by 1
+        if array.get(plval, x) <= close
+            break
+        xx := x
+        bomin := math.min(bomin, array.get(plval, x))
+
+    if xx >= mintest and open >= bomin
+        for x = 0 to xx by 1
+            if array.get(plval, x) >= bomin and array.get(plval, x) <= bomin + chwidth
+                num1 := num1 + 1
+                bostart1 := array.get(plloc, x)
+
+        if num1 < mintest or lwst <= bomin
+            bomin := na
+
+// Drawing and Alerts
+if showBF
+    if not na(bomax) and num >= mintest
+        line.new(x1 = bar_index, y1 = bomax, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
+        line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bostart, y2 = bomax - chwidth, color = bocolorup, style = lstyle)
+        line.new(x1 = bostart, y1 = bomax - chwidth, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
+        line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bar_index, y2 = bomax, color = bocolorup, style = lstyle)
+        plotshape(true, location = location.belowbar, style = shape.triangleup, color = bocolorup, size = size.small)
+
+    if not na(bomin) and num1 >= mintest
+        line.new(x1 = bar_index, y1 = bomin, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
+        line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin + chwidth, color = bocolordown, style = lstyle)
+        line.new(x1 = bostart1, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
+        line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bar_index, y2 = bomin, color = bocolordown, style = lstyle)
+        plotshape(true, location = location.abovebar, style = shape.triangledown, color = bocolordown, size = size.small)
+
+// BF Alerts
+alertcondition(not na(bomax) and num >= mintest, title = 'Breakout', message = 'Breakout')
+alertcondition(not na(bomin) and num1 >= mintest, title = 'Breakdown', message = 'Breakdown')
+alertcondition(not na(bomax) and num >= mintest or not na(bomin) and num1 >= mintest, title = 'Breakout or Breakdown', message = 'Breakout or Breakdown')
