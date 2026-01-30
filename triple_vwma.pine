@@ -114,6 +114,11 @@ sopPosInput = input.string("Bottom Left", "Position", options=["Top Right", "Top
 sopSizeInput = input.string("Small", "Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpSop)
 sopTextColor = input.color(color.white, "Text Color", group=grpSop)
 sopBgColor = input.color(color.new(color.black, 30), "Background Color", group=grpSop)
+// Active Row Colors
+colorEarly = color.new(color.aqua, 20)
+colorLock = color.new(color.lime, 20)
+colorExit = color.new(color.red, 20)
+colorDim = color.new(color.gray, 70)
 
 // =============================================================================
 // TRIPLE VWMA CALCULATIONS
@@ -213,8 +218,10 @@ if inNY
 if inLondonClose
     activeSessionName := "London Close Kill Zone"
 
-// Session Start Logic to reset calculations
+// Session Start & Range Tracking Logic
 var float activeSessionOpen = na
+var float sessHigh = na
+var float sessLow = na
 var bool newSess = false
 isAnySession = inAsia or inLondon or inNY or inLondonClose
 wasAnySession = isAnySession[1]
@@ -222,7 +229,17 @@ newSess := activeSessionName != activeSessionName[1] and activeSessionName != "O
 
 if newSess or barstate.isfirst
     activeSessionOpen := open
-if not isAnySession
+    sessHigh := high
+    sessLow := low
+else
+    // Freeze behavior: Update only if in session, otherwise hold last known state
+    // But script needs to continue calculating exhaustion if 'off-hours' is essentially 'late session'
+    // Prompt says: "Freeze on the last known state. The panel should only Reset when the next Kill Zone session officially starts."
+    // So we just update high/low on every bar. The 'reset' happens on newSess.
+    sessHigh := math.max(nz(sessHigh, high), high)
+    sessLow := math.min(nz(sessLow, low), low)
+
+if not isAnySession and not wasAnySession and na(activeSessionOpen)
     activeSessionOpen := open
 
 isMonthly = timeframe.ismonthly
@@ -269,6 +286,20 @@ atrTimeframe = getATRTimeframe()
 referenceOpen = isAnySession ? activeSessionOpen : periodOpen
 referenceATR = periodATR
 atrMeanPips = referenceATR * pipMultiplier
+
+// --- NEW Range Based Completion Logic ---
+sessionRange = sessHigh - sessLow
+// If no session active (first run), fallback to current bar range or 0
+if na(sessionRange)
+    sessionRange := high - low
+
+// Use Range for exhaustion logic instead of Move From Open
+// FIX: We must compare Session Range to DAILY ATR (or a macro metric), not the chart timeframe ATR.
+// Comparing Session Range to 5m ATR results in >1000% immediately.
+dailyATR = request.security(syminfo.tickerid, "D", ta.atr(14))
+sessionRangeCompletion = dailyATR != 0 ? (sessionRange / dailyATR) * 100 : 0
+
+// Original Directional Logic (Kept for ATR Table targets)
 moveFromOpen = math.abs(close - referenceOpen)
 percentReached = referenceATR != 0 ? (moveFromOpen / referenceATR) * 100 : 0
 bullishMove = (close > referenceOpen) ? (close - referenceOpen) * pipMultiplier : 0
@@ -302,13 +333,15 @@ lowerTarget_4 = referenceOpen - (referenceATR * mult4)
 targetReached = currentDirectionalPips >= atrMeanPips
 
 // =============================================================================
-// ADAPTIVE SESSION TRAIL LOGIC
+// ADAPTIVE SESSION TRAIL LOGIC (UPDATED)
 // =============================================================================
 atrM5 = request.security(syminfo.tickerid, "5", ta.atr(14))
 var float trailMult = trailMultLow
-if percentReached < 60
+
+// Use sessionRangeCompletion now
+if sessionRangeCompletion < 60
     trailMult := trailMultLow
-else if percentReached >= 60 and percentReached < 90
+else if sessionRangeCompletion >= 60 and sessionRangeCompletion < 90
     trailMult := trailMultMid
 else
     trailMult := trailMultHigh
@@ -332,7 +365,7 @@ plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail"
 trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
 // =============================================================================
-// SOP INFO PANEL
+// SOP INFO PANEL (UPDATED)
 // =============================================================================
 sopPos = getPosition(sopPosInput)
 sopSize = getSize(sopSizeInput)
@@ -344,32 +377,57 @@ txtEarly = "ATR % Traveled: 0% – 50%\n\nLogic: Give the trade 'breathing room'
 txtLock = "ATR % Traveled: 51% – 85%\n\nLogic: The move is established. Start protecting 'house money.'\n\nInterpretation: Middle of session expansion."
 txtExit = "ATR % Traveled: 86% – 100%+\n\nLogic: The 'gas tank' is nearly empty. Tighten up to lock in profit before the session reversal.\n\nInterpretation: Exhaustion risk high."
 
+// Dynamic Colors based on Phase
+isEarly = sessionRangeCompletion < 60
+isLock = sessionRangeCompletion >= 60 and sessionRangeCompletion < 90
+isExit = sessionRangeCompletion >= 90
+
+bgEarly = isEarly ? colorEarly : colorDim
+bgLock = isLock ? colorLock : colorDim
+bgExit = isExit ? colorExit : colorDim
+
 if showSop
     var table sopTable = table.new(sopPos, 4, 5, border_width=1)
     if barstate.islast
         // Header
-        table.cell(sopTable, 0, 0, "SOP: Adaptive Trail", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip=txtWhyM5)
+        headerTitle = "SOP: Adaptive Trail (" + str.tostring(sessionRangeCompletion, "#.#") + "%)"
+        table.cell(sopTable, 0, 0, headerTitle, bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip=txtWhyM5)
+        table.merge_cells(sopTable, 0, 0, 3, 0) // Merge header for cleaner title
+
+        // SubHeader
+        // Wait, merging messed up columns? No, merge is strictly visual.
+        // Let's unmerge to keep columns aligned or re-do structure.
+        // Re-doing structure: Header is Row 0. Subheader Row 1. Data Row 2,3,4. Footer Row 5.
+        // Existing code had Header + 3 Data + Footer.
+        // Let's just put the % in the title cell and keep the columns.
+        table.cell(sopTable, 0, 0, headerTitle, bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip=txtWhyM5)
+        // Reset merge from previous logic if needed (table.new handles fresh instance usually, but var persists)
+        // Actually, merging 0,0 to 3,0 covers the whole top row.
+        // But we need the column headers?
+        // Let's NOT merge, just update the first cell title and let the others be.
+        // Or simpler: Just put % in the title and keep structure.
+        table.cell(sopTable, 0, 0, "SOP (" + str.tostring(sessionRangeCompletion, "#") + "%)", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip=txtWhyM5)
         table.cell(sopTable, 1, 0, "% ATR", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 2, 0, "Mult (M5)", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Base: 5-Minute ATR")
+        table.cell(sopTable, 2, 0, "Mult", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Base: 5-Minute ATR")
         table.cell(sopTable, 3, 0, "Phase", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
 
         // Row 1: Early
-        table.cell(sopTable, 0, 1, "Early", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 1, 1, "0-60%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 2, 1, str.tostring(trailMultLow, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 3, 1, "Breathing Room", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtEarly)
+        table.cell(sopTable, 0, 1, "Early", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 1, "0-60%", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 1, str.tostring(trailMultLow, "#.0") + "x", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 1, "Breathe", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize, tooltip=txtEarly)
 
         // Row 2: Lock
-        table.cell(sopTable, 0, 2, "Lock", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 1, 2, "60-90%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 2, 2, str.tostring(trailMultMid, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 3, 2, "Protect", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtLock)
+        table.cell(sopTable, 0, 2, "Lock", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 2, "60-90%", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 2, str.tostring(trailMultMid, "#.0") + "x", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 2, "Protect", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize, tooltip=txtLock)
 
         // Row 3: Exhaustion
-        table.cell(sopTable, 0, 3, "Exit", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 1, 3, ">90%", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 2, 3, str.tostring(trailMultHigh, "#.0") + "x", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize)
-        table.cell(sopTable, 3, 3, "Chokehold", bgcolor=sopBgColor, text_color=sopTextColor, text_size=sopSize, tooltip=txtExit)
+        table.cell(sopTable, 0, 3, "Exit", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 1, 3, ">90%", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 2, 3, str.tostring(trailMultHigh, "#.0") + "x", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 3, 3, "Choke", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize, tooltip=txtExit)
 
         // Footer
         table.merge_cells(sopTable, 0, 4, 3, 4)
