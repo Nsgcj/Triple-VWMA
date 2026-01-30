@@ -34,9 +34,14 @@ atrMult = input.float(0.5, "ATR Multiplier", minval=0.1, step=0.1, group=grpTren
 // --- MTF Dashboard Settings ---
 grpMtf = "MTF Dashboard"
 showMtf = input.bool(true, "Show Dashboard", group=grpMtf)
+dashTextColor = input.color(color.white, "Text Color", group=grpMtf)
+dashBgColor = input.color(color.new(color.gray, 50), "Background Color", group=grpMtf)
+
 tf1 = input.timeframe("60", "Timeframe 1", group=grpMtf)
 tf2 = input.timeframe("240", "Timeframe 2", group=grpMtf)
 tf3 = input.timeframe("D", "Timeframe 3", group=grpMtf)
+tf4 = input.timeframe("W", "Timeframe 4", group=grpMtf)
+tf5 = input.timeframe("M", "Timeframe 5", group=grpMtf)
 
 // --- Calculations ---
 vwma1 = ta.vwma(src1, len1)
@@ -98,26 +103,38 @@ calcVwma(l, s) => ta.vwma(s, l)
 [mtf1_vwma, mtf1_close] = request.security(syminfo.tickerid, tf1, [ta.vwma(src3, len3), close])
 [mtf2_vwma, mtf2_close] = request.security(syminfo.tickerid, tf2, [ta.vwma(src3, len3), close])
 [mtf3_vwma, mtf3_close] = request.security(syminfo.tickerid, tf3, [ta.vwma(src3, len3), close])
+[mtf4_vwma, mtf4_close] = request.security(syminfo.tickerid, tf4, [ta.vwma(src3, len3), close])
+[mtf5_vwma, mtf5_close] = request.security(syminfo.tickerid, tf5, [ta.vwma(src3, len3), close])
 
 isBull1 = mtf1_close > mtf1_vwma
 isBull2 = mtf2_close > mtf2_vwma
 isBull3 = mtf3_close > mtf3_vwma
+isBull4 = mtf4_close > mtf4_vwma
+isBull5 = mtf5_close > mtf5_vwma
 
 // Draw Table
 if showMtf
-    var table mtfTable = table.new(position.top_right, 2, 4, border_width=1)
+    var table mtfTable = table.new(position.top_right, 2, 6, border_width=1)
     if barstate.islast
-        table.cell(mtfTable, 0, 0, "MTF", bgcolor=color.gray, text_color=color.white)
-        table.cell(mtfTable, 1, 0, "Trend", bgcolor=color.gray, text_color=color.white)
+        // Header
+        table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
+        table.cell(mtfTable, 1, 0, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
 
-        table.cell(mtfTable, 0, 1, tf1, bgcolor=color.new(color.gray, 90))
+        // Rows
+        table.cell(mtfTable, 0, 1, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 1, isBull1 ? "BULL" : "BEAR", bgcolor=isBull1 ? color.green : color.red, text_color=color.white)
 
-        table.cell(mtfTable, 0, 2, tf2, bgcolor=color.new(color.gray, 90))
+        table.cell(mtfTable, 0, 2, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 2, isBull2 ? "BULL" : "BEAR", bgcolor=isBull2 ? color.green : color.red, text_color=color.white)
 
-        table.cell(mtfTable, 0, 3, tf3, bgcolor=color.new(color.gray, 90))
+        table.cell(mtfTable, 0, 3, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
         table.cell(mtfTable, 1, 3, isBull3 ? "BULL" : "BEAR", bgcolor=isBull3 ? color.green : color.red, text_color=color.white)
+
+        table.cell(mtfTable, 0, 4, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
+        table.cell(mtfTable, 1, 4, isBull4 ? "BULL" : "BEAR", bgcolor=isBull4 ? color.green : color.red, text_color=color.white)
+
+        table.cell(mtfTable, 0, 5, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
+        table.cell(mtfTable, 1, 5, isBull5 ? "BULL" : "BEAR", bgcolor=isBull5 ? color.green : color.red, text_color=color.white)
 
 // --- Alerts ---
 alertcondition(triggerBuy, title="Bullish Trend Shift", message="🚨 BULLISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Above 200 VWMA.\nPrice: {{close}}")
