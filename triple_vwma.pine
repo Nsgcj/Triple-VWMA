@@ -645,22 +645,52 @@ if array.size(plval) >= mintest and close < open and close < lwst
             bomin := na
 
 // Drawing and Alerts
+isBreakout = not na(bomax) and num >= mintest
+isBreakdown = not na(bomin) and num1 >= mintest
+
 if showBF
-    if not na(bomax) and num >= mintest
+    if isBreakout
         line.new(x1 = bar_index, y1 = bomax, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
         line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bostart, y2 = bomax - chwidth, color = bocolorup, style = lstyle)
         line.new(x1 = bostart, y1 = bomax - chwidth, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
         line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bar_index, y2 = bomax, color = bocolorup, style = lstyle)
-        plotshape(true, location = location.belowbar, style = shape.triangleup, color = bocolorup, size = size.small)
 
-    if not na(bomin) and num1 >= mintest
+    if isBreakdown
         line.new(x1 = bar_index, y1 = bomin, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
         line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin + chwidth, color = bocolordown, style = lstyle)
         line.new(x1 = bostart1, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
         line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bar_index, y2 = bomin, color = bocolordown, style = lstyle)
-        plotshape(true, location = location.abovebar, style = shape.triangledown, color = bocolordown, size = size.small)
 
-// BF Alerts
-alertcondition(not na(bomax) and num >= mintest, title = 'Breakout', message = 'Breakout')
-alertcondition(not na(bomin) and num1 >= mintest, title = 'Breakdown', message = 'Breakdown')
-alertcondition(not na(bomax) and num >= mintest or not na(bomin) and num1 >= mintest, title = 'Breakout or Breakdown', message = 'Breakout or Breakdown')
+plotshape(showBF and isBreakout, location = location.belowbar, style = shape.triangleup, color = bocolorup, size = size.small)
+plotshape(showBF and isBreakdown, location = location.abovebar, style = shape.triangledown, color = bocolordown, size = size.small)
+
+// =============================================================================
+// ALERTS (ALL MODULES)
+// =============================================================================
+// 1. Triple VWMA Trend Logic
+alertcondition(triggerBuy, title="Bullish Trend Shift", message="🚨 BULLISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Above 200 VWMA.\nPrice: {{close}}")
+alertcondition(triggerSell, title="Bearish Trend Shift", message="⚠️ BEARISH TREND SHIFT: {{ticker}}\nSignal: Confirmed Break Below 200 VWMA.\nPrice: {{close}}")
+
+// 2. Adaptive Trail
+alertcondition(trailExit, title="Adaptive Trail Exit", message="🚨 ADAPTIVE TRAIL EXIT: {{ticker}}\nPrice Crossed Trailing Stop.\nExhaustion: {{plot('Adaptive Trail')}}")
+
+// 3. ATR Targets
+if targetReached and enableATRAlerts and barstate.isconfirmed
+    alert("ATR Target Reached: " + str.tostring(currentDirectionalPips, "#.##") +
+          " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
+          alert.freq_once_per_bar)
+
+alertcondition(ta.crossover(high, upperTarget_1), title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_2), title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_3), title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
+alertcondition(ta.crossover(high, upperTarget_4), title="Target 4 Hit (Up)", message="ATR target 4 reached (upside)")
+
+alertcondition(ta.crossunder(low, lowerTarget_1), title="Target 1 Hit (Down)", message="ATR target 1 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_2), title="Target 2 Hit (Down)", message="ATR target 2 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_3), title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
+alertcondition(ta.crossunder(low, lowerTarget_4), title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
+
+// 4. Breakout Finder
+alertcondition(isBreakout, title = 'Breakout', message = 'Breakout')
+alertcondition(isBreakdown, title = 'Breakdown', message = 'Breakdown')
+alertcondition(isBreakout or isBreakdown, title = 'Breakout or Breakdown', message = 'Breakout or Breakdown')
