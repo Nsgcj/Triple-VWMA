@@ -327,12 +327,12 @@ targetReached = currentDirectionalPips >= atrMeanPips
 // =============================================================================
 // OFF-HOURS SCALPING LOGIC (M1 Trend)
 // =============================================================================
-// Fetch M1 Data: Close, High, Low, VWMA20, VWMA50
-[m1Close, m1High, m1Low, m1Vwma20, m1Vwma50] = request.security(syminfo.tickerid, "1", [close, high, low, ta.vwma(close, 20), ta.vwma(close, 50)])
+// Updated to use VWMA 5/21 on M1 for Scalp Trend
+[m1Close, m1High, m1Low, m1Vwma5, m1Vwma21] = request.security(syminfo.tickerid, "1", [close, high, low, ta.vwma(close, 5), ta.vwma(close, 21)])
 m15ATR = request.security(syminfo.tickerid, "15", ta.atr(14))
 
 // Detect M1 Trend State (1 = Bullish, -1 = Bearish)
-m1Trend = m1Vwma20 > m1Vwma50 ? 1 : -1
+m1Trend = m1Vwma5 > m1Vwma21 ? 1 : -1
 m1TrendChanged = m1Trend != m1Trend[1]
 
 // Track Drive Origin (Lowest Low for Bull, Highest High for Bear)
@@ -358,10 +358,6 @@ atrM5 = request.security(syminfo.tickerid, "5", ta.atr(14))
 var float trailMult = trailMultLow
 
 // Use sessionRangeCompletion if in session, otherwise can fallback or stick to it
-// Logic: If Off-Hours, we might want tight scalp mode, but adaptive trail is designed for session flow.
-// We will stick to the main Logic unless user specified otherwise.
-// Note: Off-hours is technically "Late Session" or "Pre-Session".
-// Let's stick to sessionRangeCompletion for the Trail Line itself to remain robust.
 if sessionRangeCompletion < 60
     trailMult := trailMultLow
 else if sessionRangeCompletion >= 60 and sessionRangeCompletion < 90
@@ -388,7 +384,7 @@ plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail"
 trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
 // =============================================================================
-// SOP INFO PANEL (UPDATED WITH SCALP MODE)
+// SOP INFO PANEL (UPDATED - UNIFIED VIEW)
 // =============================================================================
 sopPos = getPosition(sopPosInput)
 sopSize = getSize(sopSizeInput)
@@ -396,7 +392,7 @@ sopSize = getSize(sopSizeInput)
 // Colors & States
 isScalpMode = activeSessionName == "Off-Hours"
 
-// Session Mode Logic
+// Session Mode Logic (Swing)
 isEarly = sessionRangeCompletion < 60
 isLock = sessionRangeCompletion >= 60 and sessionRangeCompletion < 90
 isExit = sessionRangeCompletion >= 90
@@ -404,74 +400,66 @@ bgEarly = isEarly ? colorEarly : colorDim
 bgLock = isLock ? colorLock : colorDim
 bgExit = isExit ? colorExit : colorDim
 
-// Scalp Mode Logic (Thresholds: <50 Early, 50-85 Hold, >85 Exhaust)
-isScalpEarly = scalpCompletion < 50
-isScalpHold = scalpCompletion >= 50 and scalpCompletion < 85
-isScalpExhaust = scalpCompletion >= 85
+txtSwing = isEarly ? "Early" : (isLock ? "Lock" : "Exit")
+iconSwing = currentTrend == 1 ? "🟢 BULL" : (currentTrend == -1 ? "🔴 BEAR" : "⚪ FLAT")
+colorSwingText = currentTrend == 1 ? color.lime : (currentTrend == -1 ? color.red : color.gray)
+colorSwingPhase = isEarly ? color.aqua : (isLock ? color.yellow : color.red)
+
+// Scalp Mode Logic (Thresholds: <40 Early, 40-80 Hold, >80 Exhaust)
+isScalpEarly = scalpCompletion < 40
+isScalpHold = scalpCompletion >= 40 and scalpCompletion < 80
+isScalpExhaust = scalpCompletion >= 80
+// Phase Colors
 bgSE = isScalpEarly ? colorEarly : colorDim
 bgSH = isScalpHold ? colorLock : colorDim
 bgSX = isScalpExhaust ? colorExit : colorDim
 
+txtScalp = isScalpEarly ? "Early" : (isScalpHold ? "Hold" : "Exhaust")
+iconScalp = m1Trend == 1 ? "🟢 BULL" : "🔴 BEAR"
+colorScalpText = m1Trend == 1 ? color.lime : color.red
+colorScalpPhase = isScalpEarly ? color.aqua : (isScalpHold ? color.yellow : color.red)
+
 if showSop
-    var table sopTable = table.new(sopPos, 4, 5, border_width=1)
+    // 2-Column Table (Header + SubHeader + Swing + Scalp + Footer)
+    // Structure: 2 Columns, 5 Rows.
+    var table sopTable = table.new(sopPos, 2, 5, border_width=1)
     if barstate.islast
-        if isScalpMode
-            // --- SCALPING MODE UI ---
-            headerTitle = "SOP: Scalp Mode (" + str.tostring(scalpCompletion, "#.#") + "%)"
-            table.cell(sopTable, 0, 0, headerTitle, bgcolor=color.new(color.purple, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Off-Hours Logic: 1m Drive vs 15m ATR")
+        // 1. STATUS HEADER
+        statusText = isScalpMode ? ">> SCALP MODE <<" : ">> SESSION MODE <<"
+        statusColor = isScalpMode ? color.new(color.orange, 20) : color.new(color.lime, 20)
+        table.cell(sopTable, 0, 0, "CURRENT STATUS:", bgcolor=color.new(color.black, 10), text_color=color.white, text_size=sopSize)
+        table.cell(sopTable, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=sopSize)
 
-            table.cell(sopTable, 1, 0, "% M15", bgcolor=color.new(color.purple, 30), text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 0, "Trend", bgcolor=color.new(color.purple, 30), text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 0, "Action", bgcolor=color.new(color.purple, 30), text_color=sopTextColor, text_size=sopSize)
+        // 2. SUB-HEADER
+        table.cell(sopTable, 0, 1, "ANALYSIS TYPE", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
+        table.cell(sopTable, 1, 1, "TREND | PHASE (%)", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
 
-            // Row 1: Early
-            table.cell(sopTable, 0, 1, "Early", bgcolor=bgSE, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 1, "0-50%", bgcolor=bgSE, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 1, m1Trend==1 ? "Bull" : "Bear", bgcolor=bgSE, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 1, "Entry", bgcolor=bgSE, text_color=sopTextColor, text_size=sopSize, tooltip="High Probability Scalp Entry")
+        // 3. SWING ROW (Session)
+        // Highlight if !isScalpMode (Session Active)
+        rowBgSwing = isScalpMode ? colorDim : color.new(color.green, 90) // Dim if inactive
+        textAlphaSwing = isScalpMode ? 50 : 0
 
-            // Row 2: Hold
-            table.cell(sopTable, 0, 2, "Hold", bgcolor=bgSH, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 2, "50-85%", bgcolor=bgSH, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 2, "-", bgcolor=bgSH, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 2, "Manage", bgcolor=bgSH, text_color=sopTextColor, text_size=sopSize, tooltip="Manage Position")
+        table.cell(sopTable, 0, 2, "SWING (SESSION)", bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
 
-            // Row 3: Exhaustion
-            table.cell(sopTable, 0, 3, "Exhaust", bgcolor=bgSX, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 3, ">85%", bgcolor=bgSX, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 3, "-", bgcolor=bgSX, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 3, "Revert", bgcolor=bgSX, text_color=sopTextColor, text_size=sopSize, tooltip="Look for Mean Reversion")
+        // Complex string for Trend + Phase
+        swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
+        table.cell(sopTable, 1, 2, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
+        // Can't do multi-color text in one cell easily, so using base text color.
+        // Could split columns if needed, but requested 2-column layout.
 
-        else
-            // --- SESSION MODE UI (Existing) ---
-            headerTitle = "SOP: Adaptive Trail (" + str.tostring(sessionRangeCompletion, "#.#") + "%)"
-            table.cell(sopTable, 0, 0, headerTitle, bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Session Logic: Range vs Daily ATR")
+        // 4. SCALP ROW (Micro)
+        rowBgScalp = isScalpMode ? color.new(color.purple, 80) : colorDim
+        textAlphaScalp = isScalpMode ? 0 : 50
 
-            table.cell(sopTable, 1, 0, "% ATR", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 0, "Mult", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize, tooltip="Base: 5-Minute ATR")
-            table.cell(sopTable, 3, 0, "Phase", bgcolor=color.new(color.blue, 30), text_color=sopTextColor, text_size=sopSize)
+        table.cell(sopTable, 0, 3, "SCALP (1-MIN)", bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
 
-            // Row 1: Early
-            table.cell(sopTable, 0, 1, "Early", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 1, "0-60%", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 1, str.tostring(trailMultLow, "#.0") + "x", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 1, "Breathe", bgcolor=bgEarly, text_color=sopTextColor, text_size=sopSize, tooltip="Early Session Buffer")
+        scalpContent = iconScalp + " | " + txtScalp + " (" + str.tostring(scalpCompletion, "#") + "%)"
+        table.cell(sopTable, 1, 3, scalpContent, bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
 
-            // Row 2: Lock
-            table.cell(sopTable, 0, 2, "Lock", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 2, "60-90%", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 2, str.tostring(trailMultMid, "#.0") + "x", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 2, "Protect", bgcolor=bgLock, text_color=sopTextColor, text_size=sopSize, tooltip="Trend Established")
-
-            // Row 3: Exhaustion
-            table.cell(sopTable, 0, 3, "Exit", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 1, 3, ">90%", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 2, 3, str.tostring(trailMultHigh, "#.0") + "x", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize)
-            table.cell(sopTable, 3, 3, "Choke", bgcolor=bgExit, text_color=sopTextColor, text_size=sopSize, tooltip="Volatiltiy Exhausted")
-
-        // Footer
-        table.merge_cells(sopTable, 0, 4, 3, 4)
-        table.cell(sopTable, 0, 4, "Hover headers for SOP details", bgcolor=color.new(color.gray, 50), text_color=color.new(sopTextColor, 30), text_size=size.tiny)
+        // 5. FOOTER (Active Logic Reminder)
+        footerText = isScalpMode ? "Focus: Counter-Trend or Scalp Drives" : "Focus: Trend Extension & Trail Management"
+        table.merge_cells(sopTable, 0, 4, 1, 4)
+        table.cell(sopTable, 0, 4, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
 
 // =============================================================================
 // ATR TABLE DRAWING
