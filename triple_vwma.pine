@@ -301,42 +301,46 @@ if showBP and showBPTable and barstate.islast
     table.cell(tbl_bp, 0, 2 + bpOffset, 'Ratio: ' + str.tostring(WR) + '%', text_halign = text.align_center, bgcolor = chart.bg_color, text_color = chart.fg_color)
 
 // BP Lines & Labels (Only if showBP)
-CreateLine(p, i, c) =>
+CreateLine(p, i, c, visible) =>
     prevLine = matrix.get(lines_bp, 0, i)
     line.delete(prevLine)
-    li = line.new(b_bp[1], p, b_bp, p, color = c, width = 2)
-    matrix.set(lines_bp, 0, i, li)
+    if visible
+        li = line.new(b_bp[1], p, b_bp, p, color = c, width = 2)
+        matrix.set(lines_bp, 0, i, li)
 
-CreateLabel(p, i, c, r, v) =>
+CreateLabel(p, i, c, r, v, visible) =>
     prevLabel = matrix.get(labels_bp, 0, i)
     label.delete(prevLabel)
-    la = label.new(b_bp + 1, p, text = str.tostring(matrix.get(vals_bp, r, v), format.percent), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c)
-    matrix.set(labels_bp, 0, i, la)
+    if visible
+        la = label.new(b_bp + 1, p, text = str.tostring(matrix.get(vals_bp, r, v), format.percent), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c)
+        matrix.set(labels_bp, 0, i, la)
 
-if showBP
-    for i = 0 to nbr - 1 by 1
-        // Simplified visibility logic for integration
-        if true
-            hi = h_bp[1] + step_bp * i
-            lo = l_bp[1] - step_bp * i
-            CreateLine(hi, i, upCol)
-            CreateLine(lo, 5 + i, dnCol)
-            if green_bp
-                CreateLabel(hi, i, upCol, i, 0)
-                CreateLabel(lo, 5 + i, dnCol, i, 1)
-            else
-                CreateLabel(hi, i, upCol, i, 2)
-                CreateLabel(lo, 5 + i, dnCol, i, 3)
+// Call unconditionally to avoid warnings
+for i = 0 to nbr - 1 by 1
+    // Calculate positions regardless of visibility (low cost)
+    hi = h_bp[1] + step_bp * i
+    lo = l_bp[1] - step_bp * i
 
-    // Fill
-    if fill
-        var filler = linefill(na)
-        for i = 0 to 8 by 1
-            get = matrix.get(lines_bp, 0, i)
-            get1 = matrix.get(lines_bp, 0, i + 1)
-            col = i > 4 ? color.new(dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(upCol, 80)
-            filler := linefill.new(get, get1, color = col)
-            linefill.delete(filler[1])
+    // Pass showBP state to drawing functions
+    CreateLine(hi, i, upCol, showBP)
+    CreateLine(lo, 5 + i, dnCol, showBP)
+
+    if green_bp
+        CreateLabel(hi, i, upCol, i, 0, showBP)
+        CreateLabel(lo, 5 + i, dnCol, i, 1, showBP)
+    else
+        CreateLabel(hi, i, upCol, i, 2, showBP)
+        CreateLabel(lo, 5 + i, dnCol, i, 3, showBP)
+
+// Fill
+if showBP and fill
+    var filler = linefill(na)
+    for i = 0 to 8 by 1
+        get = matrix.get(lines_bp, 0, i)
+        get1 = matrix.get(lines_bp, 0, i + 1)
+        col = i > 4 ? color.new(dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(upCol, 80)
+        filler := linefill.new(get, get1, color = col)
+        linefill.delete(filler[1])
 
 // =============================================================================
 // TREND TRIGGER LOGIC (INTEGRATED)
