@@ -415,6 +415,133 @@ if showMtf and barstate.islast
     table.cell(mtfTable, 1, 5 + mtfOffset, s5, bgcolor=getTrendColor(s5), text_color=color.white)
 
 // =============================================================================
+// ATR TABLE LOGIC & CALCULATIONS
+// =============================================================================
+// Helper to check time in timezone
+isInSession(sess) => not na(time(timeframe.period, sess, "America/New_York"))
+
+inAsia = isInSession(kzAsia)
+inLondon = isInSession(kzLondon)
+inNY = isInSession(kzNY)
+inLondonClose = isInSession(kzLondonClose)
+
+activeSessionName = "Off-Hours"
+if inAsia
+    activeSessionName := "Asian Kill Zone"
+if inLondon
+    activeSessionName := "London Open Kill Zone"
+if inNY
+    activeSessionName := "NY Open Kill Zone"
+if inLondonClose
+    activeSessionName := "London Close Kill Zone"
+
+// Session Start & Range Tracking Logic
+var float activeSessionOpen = na
+var float sessHigh = na
+var float sessLow = na
+var bool newSess = false
+isAnySession = inAsia or inLondon or inNY or inLondonClose
+wasAnySession = isAnySession[1]
+newSess := activeSessionName != activeSessionName[1] and activeSessionName != "Off-Hours"
+
+if newSess or barstate.isfirst
+    activeSessionOpen := open
+    sessHigh := high
+    sessLow := low
+else
+    sessHigh := math.max(nz(sessHigh, high), high)
+    sessLow := math.min(nz(sessLow, low), low)
+
+if not isAnySession and not wasAnySession and na(activeSessionOpen)
+    activeSessionOpen := open
+
+isMonthly = timeframe.ismonthly
+isWeekly = timeframe.isweekly
+isDaily = timeframe.isdaily
+isIntraday = timeframe.isintraday
+
+getCurrentMinutes() =>
+    if timeframe.isminutes
+        timeframe.multiplier
+    else if timeframe.isseconds
+        timeframe.multiplier / 60
+    else
+        0
+
+currentMinutes = getCurrentMinutes()
+isHourly = isIntraday and currentMinutes >= 60 and currentMinutes < 1440
+is4Hour = currentMinutes == 240
+isMinuteBased = isIntraday and currentMinutes > 0 and currentMinutes < 60
+
+getATRTimeframe() =>
+    if isMonthly
+        "M"
+    else if isWeekly
+        "W"
+    else if isDaily
+        "D"
+    else if is4Hour or isHourly
+        "240"
+    else if isMinuteBased
+        timeframe.period
+    else
+        "D"
+
+atrTimeframe = getATRTimeframe()
+
+// Fetch ATR Data
+[periodOpen, periodATR, period_atr_prev, period_atr_current] = request.security(
+    syminfo.tickerid,
+    atrTimeframe,
+    [open, ta.atr(atrLength), ta.atr(atrLength)[1], ta.atr(atrLength)],
+    lookahead = barmerge.lookahead_off)
+
+referenceOpen = isAnySession ? activeSessionOpen : periodOpen
+referenceATR = periodATR
+atrMeanPips = referenceATR * pipMultiplier
+
+// --- NEW Range Based Completion Logic ---
+sessionRange = sessHigh - sessLow
+if na(sessionRange)
+    sessionRange := high - low
+
+dailyATR = request.security(syminfo.tickerid, "D", ta.atr(14))
+sessionRangeCompletion = dailyATR != 0 ? (sessionRange / dailyATR) * 100 : 0
+
+// Original Directional Logic (Kept for ATR Table targets)
+moveFromOpen = math.abs(close - referenceOpen)
+percentReached = referenceATR != 0 ? (moveFromOpen / referenceATR) * 100 : 0
+bullishMove = (close > referenceOpen) ? (close - referenceOpen) * pipMultiplier : 0
+bearishMove = (close < referenceOpen) ? (referenceOpen - close) * pipMultiplier : 0
+currentDirectionalPips = bullishMove > 0 ? bullishMove : bearishMove
+
+getTargetMultipliers() =>
+    if isMonthly
+        [0.5, 1.0, 1.5, 2.0]
+    else if isWeekly
+        [0.5, 0.75, 1.0, 1.5]
+    else if isDaily
+        [0.5, 0.75, 1.0, 1.5]
+    else if isHourly or is4Hour
+        [0.3, 0.5, 0.75, 1.0]
+    else
+        [0.25, 0.5, 0.75, 1.0]
+
+[mult1, mult2, mult3, mult4] = getTargetMultipliers()
+
+upperTarget_1 = referenceOpen + (referenceATR * mult1)
+upperTarget_2 = referenceOpen + (referenceATR * mult2)
+upperTarget_3 = referenceOpen + (referenceATR * mult3)
+upperTarget_4 = referenceOpen + (referenceATR * mult4)
+
+lowerTarget_1 = referenceOpen - (referenceATR * mult1)
+lowerTarget_2 = referenceOpen - (referenceATR * mult2)
+lowerTarget_3 = referenceOpen - (referenceATR * mult3)
+lowerTarget_4 = referenceOpen - (referenceATR * mult4)
+
+targetReached = currentDirectionalPips >= atrMeanPips
+
+// =============================================================================
 // OFF-HOURS SCALPING & TRAIL LOGIC
 // =============================================================================
 [m1Close, m1High, m1Low, m1Vwma5, m1Vwma21] = request.security(syminfo.tickerid, "1", [close, high, low, ta.vwma(close, 5), ta.vwma(close, 21)])
