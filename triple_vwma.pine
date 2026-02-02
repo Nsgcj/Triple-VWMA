@@ -316,29 +316,32 @@ CreateLabel(p, i, c, r, v, visible) =>
         matrix.set(labels_bp, 0, i, la)
 
 // Call unconditionally to avoid warnings
-for i = 0 to nbr - 1 by 1
-    // Calculate positions regardless of visibility (low cost)
-    hi = h_bp[1] + step_bp * i
-    lo = l_bp[1] - step_bp * i
+// The loop itself must be in global scope
+// Using fixed loop size (5 is maxval for nbr) to avoid consistency warnings
+for i = 0 to 4
+    if i < bp_nbr
+        // Calculate positions regardless of visibility (low cost)
+        hi = h_bp[1] + step_bp * i
+        lo = l_bp[1] - step_bp * i
 
-    // Pass showBP state to drawing functions
-    CreateLine(hi, i, upCol, showBP)
-    CreateLine(lo, 5 + i, dnCol, showBP)
+        // Pass showBP state to drawing functions
+        CreateLine(hi, i, bp_upCol, showBP)
+        CreateLine(lo, 5 + i, bp_dnCol, showBP)
 
-    if green_bp
-        CreateLabel(hi, i, upCol, i, 0, showBP)
-        CreateLabel(lo, 5 + i, dnCol, i, 1, showBP)
-    else
-        CreateLabel(hi, i, upCol, i, 2, showBP)
-        CreateLabel(lo, 5 + i, dnCol, i, 3, showBP)
+        if green_bp
+            CreateLabel(hi, i, bp_upCol, i, 0, showBP)
+            CreateLabel(lo, 5 + i, bp_dnCol, i, 1, showBP)
+        else
+            CreateLabel(hi, i, bp_upCol, i, 2, showBP)
+            CreateLabel(lo, 5 + i, bp_dnCol, i, 3, showBP)
 
-// Fill
-if showBP and fill
+// Fill - Using conditional execution is safer for fills to avoid visual noise if lines aren't drawn
+if showBP and bp_fill
     var filler = linefill(na)
     for i = 0 to 8 by 1
         get = matrix.get(lines_bp, 0, i)
         get1 = matrix.get(lines_bp, 0, i + 1)
-        col = i > 4 ? color.new(dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(upCol, 80)
+        col = i > 4 ? color.new(bp_dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(bp_upCol, 80)
         filler := linefill.new(get, get1, color = col)
         linefill.delete(filler[1])
 
