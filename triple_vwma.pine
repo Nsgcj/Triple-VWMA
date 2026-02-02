@@ -15,7 +15,12 @@ getPosition(pos) =>
         "Bottom Left" => position.bottom_left
         "Bottom Center" => position.bottom_center
         "Bottom Right" => position.bottom_right
+        "Quarter Left" => position.top_left
+        "Quarter Right" => position.top_right
         => position.top_right
+
+getRowOffset(pos) =>
+    (pos == "Quarter Left" or pos == "Quarter Right") ? 6 : 0
 
 getSize(sizeStr) =>
     switch sizeStr
@@ -80,7 +85,7 @@ hugThresh = input.float(0.15, "Hug Threshold % (Dist from VWMA 3)", step=0.05, g
 // --- MTF Dashboard Settings ---
 grpMtf = "MTF Dashboard"
 showMtf = input.bool(true, "Show Dashboard", group=grpMtf)
-dashPosInput = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=grpMtf)
+dashPosInput = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Quarter Left", "Quarter Right"], group=grpMtf)
 dashTextColor = input.color(color.white, "Text Color", group=grpMtf)
 dashBgColor = input.color(color.new(color.gray, 50), "Background Color", group=grpMtf)
 
@@ -98,7 +103,7 @@ showPrevATR = input.bool(true, title = 'Show Dynamic ATR Analysis Panel', group 
 showATRDirection = input.bool(true, title = 'Show ATR Directional Tracking', group = grpAtrDisplay)
 showMultiLevelTargets = input.bool(true, title = 'Show Multi-Level ATR Targets', group = grpAtrDisplay)
 atrTablePosition = input.string("Bottom Right", title="ATR Table Position",
-    options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"],
+    options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right", "Quarter Left", "Quarter Right"],
     group = grpAtrDisplay)
 atrTableSize = input.string("Small", title="ATR Table Text Size",
     options=["Tiny", "Small", "Normal", "Large", "Huge"], group = grpAtrDisplay)
@@ -129,7 +134,7 @@ kzLondonClose = input.session("1000-1200", title="London Close Kill Zone", group
 // =============================================================================
 grpSop = "SOP Info Panel"
 showSop = input.bool(true, "Show SOP Info Panel", group=grpSop)
-sopPosInput = input.string("Bottom Left", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=grpSop)
+sopPosInput = input.string("Bottom Left", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Quarter Left", "Quarter Right"], group=grpSop)
 sopSizeInput = input.string("Small", "Text Size", options=["Tiny", "Small", "Normal", "Large"], group=grpSop)
 sopTextColor = input.color(color.white, "Text Color", group=grpSop)
 sopBgColor = input.color(color.new(color.black, 30), "Background Color", group=grpSop)
@@ -163,7 +168,7 @@ nbr = input.int(5, title = 'Number of Lines', maxval = 5, minval = 1, group = gr
 upCol = input.color(color.new(color.green, 0), title = '', inline = 'colbp', group=grpBP)
 dnCol = input.color(color.new(color.red, 0), title = '', inline = 'colbp', group=grpBP)
 fill = input.bool(true, title = 'Fill Color', inline = 'colbp', group=grpBP)
-bpPosInput = input.string("Middle Right", "BP Table Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=grpBP)
+bpPosInput = input.string("Middle Right", "BP Table Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Quarter Left", "Quarter Right"], group=grpBP)
 
 // =============================================================================
 // EHLERS TMA CALCULATIONS
@@ -285,13 +290,14 @@ bpCondition = probBull > probBear // Basic logic: if odds of Higher are better t
 
 // BP Table
 if showBP and showBPTable and barstate.islast
-    var tbl_bp = table.new(getPosition(bpPosInput), 2, 3, frame_color = color.new(color.gray, 50), frame_width = 3, border_color = chart.bg_color, border_width = -2)
+    bpOffset = getRowOffset(bpPosInput)
+    var tbl_bp = table.new(getPosition(bpPosInput), 2, 3 + bpOffset, frame_color = color.new(color.gray, 50), frame_width = 3, border_color = chart.bg_color, border_width = -2)
     W = matrix.get(total_bp, 6, 0)
     L = matrix.get(total_bp, 6, 1)
     WR = (W + L) > 0 ? math.round(W / (W + L) * 100, 2) : 0
-    table.cell(tbl_bp, 0, 0, 'WIN: ' + str.tostring(W), text_halign = text.align_center, bgcolor = chart.bg_color, text_color = color.green)
-    table.cell(tbl_bp, 0, 1, 'LOSS: ' + str.tostring(L), text_halign = text.align_center, bgcolor = chart.bg_color, text_color = color.red)
-    table.cell(tbl_bp, 0, 2, 'Ratio: ' + str.tostring(WR) + '%', text_halign = text.align_center, bgcolor = chart.bg_color, text_color = chart.fg_color)
+    table.cell(tbl_bp, 0, 0 + bpOffset, 'WIN: ' + str.tostring(W), text_halign = text.align_center, bgcolor = chart.bg_color, text_color = color.green)
+    table.cell(tbl_bp, 0, 1 + bpOffset, 'LOSS: ' + str.tostring(L), text_halign = text.align_center, bgcolor = chart.bg_color, text_color = color.red)
+    table.cell(tbl_bp, 0, 2 + bpOffset, 'Ratio: ' + str.tostring(WR) + '%', text_halign = text.align_center, bgcolor = chart.bg_color, text_color = chart.fg_color)
 
 // BP Lines & Labels (Only if showBP)
 CreateLine(p, i, c) =>
@@ -384,11 +390,12 @@ getTrendColor(status) =>
         color.red
 
 dashPos = getPosition(dashPosInput)
-var table mtfTable = table.new(dashPos, 2, 6, border_width=1)
+mtfOffset = getRowOffset(dashPosInput)
+var table mtfTable = table.new(dashPos, 2, 6 + mtfOffset, border_width=1)
 
 if showMtf and barstate.islast
-    table.cell(mtfTable, 0, 0, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 0, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 0, 0 + mtfOffset, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 0 + mtfOffset, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
 
     s1 = getTrendStatus(mtf1_close, mtf1_vwma)
     s2 = getTrendStatus(mtf2_close, mtf2_vwma)
@@ -396,16 +403,16 @@ if showMtf and barstate.islast
     s4 = getTrendStatus(mtf4_close, mtf4_vwma)
     s5 = getTrendStatus(mtf5_close, mtf5_vwma)
 
-    table.cell(mtfTable, 0, 1, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 1, s1, bgcolor=getTrendColor(s1), text_color=color.white)
-    table.cell(mtfTable, 0, 2, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 2, s2, bgcolor=getTrendColor(s2), text_color=color.white)
-    table.cell(mtfTable, 0, 3, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 3, s3, bgcolor=getTrendColor(s3), text_color=color.white)
-    table.cell(mtfTable, 0, 4, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 4, s4, bgcolor=getTrendColor(s4), text_color=color.white)
-    table.cell(mtfTable, 0, 5, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 5, s5, bgcolor=getTrendColor(s5), text_color=color.white)
+    table.cell(mtfTable, 0, 1 + mtfOffset, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 1 + mtfOffset, s1, bgcolor=getTrendColor(s1), text_color=color.white)
+    table.cell(mtfTable, 0, 2 + mtfOffset, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 2 + mtfOffset, s2, bgcolor=getTrendColor(s2), text_color=color.white)
+    table.cell(mtfTable, 0, 3 + mtfOffset, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 3 + mtfOffset, s3, bgcolor=getTrendColor(s3), text_color=color.white)
+    table.cell(mtfTable, 0, 4 + mtfOffset, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 4 + mtfOffset, s4, bgcolor=getTrendColor(s4), text_color=color.white)
+    table.cell(mtfTable, 0, 5 + mtfOffset, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
+    table.cell(mtfTable, 1, 5 + mtfOffset, s5, bgcolor=getTrendColor(s5), text_color=color.white)
 
 // =============================================================================
 // OFF-HOURS SCALPING & TRAIL LOGIC
@@ -464,6 +471,7 @@ trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 an
 // SOP INFO PANEL
 // =============================================================================
 sopPos = getPosition(sopPosInput)
+sopOffset = getRowOffset(sopPosInput)
 sopSize = getSize(sopSizeInput)
 isScalpMode = activeSessionName == "Off-Hours"
 
@@ -487,70 +495,71 @@ bgSX = isScalpExhaust ? colorExit : colorDim
 txtScalp = isScalpEarly ? "Early" : (isScalpHold ? "Hold" : "Exhaust")
 iconScalp = m1Trend == 1 ? "🟢 BULL" : "🔴 BEAR"
 
-var table sopTable = table.new(sopPos, 2, 6, border_width=1)
+var table sopTable = table.new(sopPos, 2, 6 + sopOffset, border_width=1)
 
 if showSop and barstate.islast
     statusText = isScalpMode ? ">> SCALP MODE <<" : ">> SESSION MODE <<"
     statusColor = isScalpMode ? color.new(color.orange, 20) : color.new(color.lime, 20)
-    table.cell(sopTable, 0, 0, "CURRENT STATUS:", bgcolor=color.new(color.black, 10), text_color=color.white, text_size=sopSize)
-    table.cell(sopTable, 1, 0, statusText, bgcolor=statusColor, text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 0, 0 + sopOffset, "CURRENT STATUS:", bgcolor=color.new(color.black, 10), text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 1, 0 + sopOffset, statusText, bgcolor=statusColor, text_color=color.white, text_size=sopSize)
 
-    table.cell(sopTable, 0, 1, "ANALYSIS TYPE", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
-    table.cell(sopTable, 1, 1, "TREND | PHASE (%)", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 0, 1 + sopOffset, "ANALYSIS TYPE", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
+    table.cell(sopTable, 1, 1 + sopOffset, "TREND | PHASE (%)", bgcolor=color.new(color.blue, 30), text_color=color.white, text_size=sopSize)
 
     rowBgSwing = isScalpMode ? colorDim : color.new(color.green, 90)
     textAlphaSwing = isScalpMode ? 50 : 0
-    table.cell(sopTable, 0, 2, "SWING (SESSION)", bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
+    table.cell(sopTable, 0, 2 + sopOffset, "SWING (SESSION)", bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
     swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
     if currentTrend == 0
         swingContent := "⚪ FLAT | " + (isChoppy ? "CHOP" : "CONSOL")
-    table.cell(sopTable, 1, 2, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
+    table.cell(sopTable, 1, 2 + sopOffset, swingContent, bgcolor=rowBgSwing, text_color=color.new(color.white, textAlphaSwing), text_size=sopSize)
 
     rowBgScalp = isScalpMode ? color.new(color.purple, 80) : colorDim
     textAlphaScalp = isScalpMode ? 0 : 50
-    table.cell(sopTable, 0, 3, "SCALP (1-MIN)", bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+    table.cell(sopTable, 0, 3 + sopOffset, "SCALP (1-MIN)", bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
     scalpContent = iconScalp + " | " + txtScalp + " (" + str.tostring(scalpCompletion, "#") + "%)"
-    table.cell(sopTable, 1, 3, scalpContent, bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
+    table.cell(sopTable, 1, 3 + sopOffset, scalpContent, bgcolor=rowBgScalp, text_color=color.new(color.white, textAlphaScalp), text_size=sopSize)
 
     footerText = isScalpMode ? "Focus: Counter-Trend or Scalp Drives" : "Focus: Trend Extension & Trail Management"
-    table.merge_cells(sopTable, 0, 4, 1, 4)
-    table.cell(sopTable, 0, 4, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
+    table.merge_cells(sopTable, 0, 4 + sopOffset, 1, 4 + sopOffset)
+    table.cell(sopTable, 0, 4 + sopOffset, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
 
 // =============================================================================
 // ATR TABLE DRAWING
 // =============================================================================
-var table atr_table = table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1)
+atrOffset = getRowOffset(atrTablePosition)
+var table atr_table = table.new(getPosition(atrTablePosition), 2, (showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3) + atrOffset, border_width=1)
 
 if barstate.islast and showPrevATR
     atrSize = getSize(atrTableSize)
     headerText = activeSessionName != "Off-Hours" ? activeSessionName : (isMinuteBased ? str.format("{0}M ATR Analysis", currentMinutes) : "ATR Analysis")
-    table.cell(atr_table, 0, 0, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
-    table.cell(atr_table, 1, 0, "", bgcolor = color.new(color.blue, 20))
-    table.cell(atr_table, 0, 1, "Prev Period ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-    table.cell(atr_table, 1, 1, str.format('{0, number, #.#####}', period_atr_prev), bgcolor = color.new(color.black, 10), text_color = color.yellow, text_size = atrSize)
-    table.cell(atr_table, 0, 2, "Current ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 0, 0 + atrOffset, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, 0 + atrOffset, "", bgcolor = color.new(color.blue, 20))
+    table.cell(atr_table, 0, 1 + atrOffset, "Prev Period ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, 1 + atrOffset, str.format('{0, number, #.#####}', period_atr_prev), bgcolor = color.new(color.black, 10), text_color = color.yellow, text_size = atrSize)
+    table.cell(atr_table, 0, 2 + atrOffset, "Current ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
     atr_change = period_atr_current - period_atr_prev
     atr_change_pct = period_atr_prev != 0 ? (atr_change / period_atr_prev) * 100 : 0
     atr_cell_color = atr_change > 0 ? color.new(color.red, 30) : color.new(color.green, 30)
-    table.cell(atr_table, 1, 2, str.format('{0, number, #.#####} ({1, number, +#.##;-#.##}%)', period_atr_current, atr_change_pct), bgcolor = atr_cell_color, text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, 2 + atrOffset, str.format('{0, number, #.#####} ({1, number, +#.##;-#.##}%)', period_atr_current, atr_change_pct), bgcolor = atr_cell_color, text_color = color.white, text_size = atrSize)
 
     if showATRDirection
-        table.cell(atr_table, 0, 3, str.format("{0}-Period ATR Avg", atrLength), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 1, 3, str.format('{0, number, #.##} pips', atrMeanPips), bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 4, "Current Direction", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 0, 3 + atrOffset, str.format("{0}-Period ATR Avg", atrLength), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, 3 + atrOffset, str.format('{0, number, #.##} pips', atrMeanPips), bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 0, 4 + atrOffset, "Current Direction", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         direction_color = bullishMove > 0 ? color.new(color.green, 30) : color.new(color.red, 30)
         direction_icon = bullishMove > 0 ? "▲" : "▼"
-        table.cell(atr_table, 1, 4, str.format('{0} {1, number, #.##} pips', direction_icon, currentDirectionalPips), bgcolor = direction_color, text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 5, "% ATR Reached", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, 4 + atrOffset, str.format('{0} {1, number, #.##} pips', direction_icon, currentDirectionalPips), bgcolor = direction_color, text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 0, 5 + atrOffset, "% ATR Reached", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         pct_color = percentReached >= 100 ? color.new(color.yellow, 30) : percentReached >= 75 ? color.new(color.orange, 30) : percentReached >= 50 ? color.new(color.blue, 30) : color.new(color.gray, 50)
-        table.cell(atr_table, 1, 5, str.format('{0, number, #.#}%', percentReached), bgcolor = pct_color, text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 6, "Target Reached?", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, 5 + atrOffset, str.format('{0, number, #.#}%', percentReached), bgcolor = pct_color, text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 0, 6 + atrOffset, "Target Reached?", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         target_status = targetReached ? "✓ YES" : "✗ NO"
         target_color = targetReached ? color.new(color.green, 30) : color.new(color.gray, 50)
-        table.cell(atr_table, 1, 6, target_status, bgcolor = target_color, text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, 6 + atrOffset, target_status, bgcolor = target_color, text_color = color.white, text_size = atrSize)
 
         if isIntraday and (isHourly or is4Hour)
-            table.cell(atr_table, 0, 7, "Active Session", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 0, 7 + atrOffset, "Active Session", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
             session_color = color.new(color.gray, 50)
             if inNY
                 session_color := color.new(color.blue, 30)
@@ -558,23 +567,23 @@ if barstate.islast and showPrevATR
                 session_color := color.new(color.green, 30)
             else if inAsia
                 session_color := color.new(color.yellow, 30)
-            table.cell(atr_table, 1, 7, activeSessionName, bgcolor = session_color, text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 7 + atrOffset, activeSessionName, bgcolor = session_color, text_color = color.white, text_size = atrSize)
 
         if showMultiLevelTargets
-            row_offset = (isIntraday and (isHourly or is4Hour)) ? 1 : 0
+            targetRowOffset = (isIntraday and (isHourly or is4Hour)) ? 1 : 0
             bullish_direction = close > referenceOpen
             target_1_hit = bullish_direction ? high >= upperTarget_1 : low <= lowerTarget_1
             target_2_hit = bullish_direction ? high >= upperTarget_2 : low <= lowerTarget_2
             target_3_hit = bullish_direction ? high >= upperTarget_3 : low <= lowerTarget_3
             target_4_hit = bullish_direction ? high >= upperTarget_4 : low <= lowerTarget_4
-            table.cell(atr_table, 0, 7 + row_offset, str.format("{0}x ATR Target", mult1), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 7 + row_offset, target_1_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_1 - close) * pipMultiplier : (close - lowerTarget_1) * pipMultiplier), bgcolor = target_1_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 8 + row_offset, str.format("{0}x ATR Target", mult2), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 8 + row_offset, target_2_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_2 - close) * pipMultiplier : (close - lowerTarget_2) * pipMultiplier), bgcolor = target_2_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 9 + row_offset, str.format("{0}x ATR Target", mult3), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 9 + row_offset, target_3_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_3 - close) * pipMultiplier : (close - lowerTarget_3) * pipMultiplier), bgcolor = target_3_hit ? color.new(color.yellow, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 10 + row_offset, str.format("{0}x ATR Target", mult4), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 10 + row_offset, target_4_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_4 - close) * pipMultiplier : (close - lowerTarget_4) * pipMultiplier), bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 0, 7 + targetRowOffset + atrOffset, str.format("{0}x ATR Target", mult1), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 7 + targetRowOffset + atrOffset, target_1_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_1 - close) * pipMultiplier : (close - lowerTarget_1) * pipMultiplier), bgcolor = target_1_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 0, 8 + targetRowOffset + atrOffset, str.format("{0}x ATR Target", mult2), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 8 + targetRowOffset + atrOffset, target_2_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_2 - close) * pipMultiplier : (close - lowerTarget_2) * pipMultiplier), bgcolor = target_2_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 0, 9 + targetRowOffset + atrOffset, str.format("{0}x ATR Target", mult3), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 9 + targetRowOffset + atrOffset, target_3_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_3 - close) * pipMultiplier : (close - lowerTarget_3) * pipMultiplier), bgcolor = target_3_hit ? color.new(color.yellow, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 0, 10 + targetRowOffset + atrOffset, str.format("{0}x ATR Target", mult4), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, 10 + targetRowOffset + atrOffset, target_4_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_4 - close) * pipMultiplier : (close - lowerTarget_4) * pipMultiplier), bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
 
 // =============================================================================
 // BREAKOUT FINDER LOGIC
