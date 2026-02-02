@@ -86,6 +86,7 @@ hugThresh = input.float(0.15, "Hug Threshold % (Dist from VWMA 3)", step=0.05, g
 grpMtf = "MTF Dashboard"
 showMtf = input.bool(true, "Show Dashboard", group=grpMtf)
 dashPosInput = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Quarter Left", "Quarter Right"], group=grpMtf)
+dashSizeInput = input.string("Small", "Size", options=["Tiny", "Small", "Normal", "Large", "Huge"], group=grpMtf)
 dashTextColor = input.color(color.white, "Text Color", group=grpMtf)
 dashBgColor = input.color(color.new(color.gray, 50), "Background Color", group=grpMtf)
 
@@ -391,11 +392,17 @@ getTrendColor(status) =>
 
 dashPos = getPosition(dashPosInput)
 mtfOffset = getRowOffset(dashPosInput)
+dashSize = getSize(dashSizeInput)
 var table mtfTable = table.new(dashPos, 2, 6 + mtfOffset, border_width=1)
 
 if showMtf and barstate.islast
-    table.cell(mtfTable, 0, 0 + mtfOffset, "MTF", bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 0 + mtfOffset, "Trend", bgcolor=dashBgColor, text_color=dashTextColor)
+    // Force Spacer Rows if Offset is used
+    if mtfOffset > 0
+        for i = 0 to mtfOffset - 1
+            table.cell(mtfTable, 0, i, "", height=4, bgcolor=color.new(color.black, 100))
+
+    table.cell(mtfTable, 0, 0 + mtfOffset, "MTF", bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 0 + mtfOffset, "Trend", bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
 
     s1 = getTrendStatus(mtf1_close, mtf1_vwma)
     s2 = getTrendStatus(mtf2_close, mtf2_vwma)
@@ -403,16 +410,16 @@ if showMtf and barstate.islast
     s4 = getTrendStatus(mtf4_close, mtf4_vwma)
     s5 = getTrendStatus(mtf5_close, mtf5_vwma)
 
-    table.cell(mtfTable, 0, 1 + mtfOffset, tf1, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 1 + mtfOffset, s1, bgcolor=getTrendColor(s1), text_color=color.white)
-    table.cell(mtfTable, 0, 2 + mtfOffset, tf2, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 2 + mtfOffset, s2, bgcolor=getTrendColor(s2), text_color=color.white)
-    table.cell(mtfTable, 0, 3 + mtfOffset, tf3, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 3 + mtfOffset, s3, bgcolor=getTrendColor(s3), text_color=color.white)
-    table.cell(mtfTable, 0, 4 + mtfOffset, tf4, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 4 + mtfOffset, s4, bgcolor=getTrendColor(s4), text_color=color.white)
-    table.cell(mtfTable, 0, 5 + mtfOffset, tf5, bgcolor=dashBgColor, text_color=dashTextColor)
-    table.cell(mtfTable, 1, 5 + mtfOffset, s5, bgcolor=getTrendColor(s5), text_color=color.white)
+    table.cell(mtfTable, 0, 1 + mtfOffset, tf1, bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 1 + mtfOffset, s1, bgcolor=getTrendColor(s1), text_color=color.white, text_size=dashSize)
+    table.cell(mtfTable, 0, 2 + mtfOffset, tf2, bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 2 + mtfOffset, s2, bgcolor=getTrendColor(s2), text_color=color.white, text_size=dashSize)
+    table.cell(mtfTable, 0, 3 + mtfOffset, tf3, bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 3 + mtfOffset, s3, bgcolor=getTrendColor(s3), text_color=color.white, text_size=dashSize)
+    table.cell(mtfTable, 0, 4 + mtfOffset, tf4, bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 4 + mtfOffset, s4, bgcolor=getTrendColor(s4), text_color=color.white, text_size=dashSize)
+    table.cell(mtfTable, 0, 5 + mtfOffset, tf5, bgcolor=dashBgColor, text_color=dashTextColor, text_size=dashSize)
+    table.cell(mtfTable, 1, 5 + mtfOffset, s5, bgcolor=getTrendColor(s5), text_color=color.white, text_size=dashSize)
 
 // =============================================================================
 // ATR TABLE LOGIC & CALCULATIONS
@@ -817,23 +824,41 @@ if targetReached and enableATRAlerts and barstate.isconfirmed
           " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
           alert.freq_once_per_bar)
 
-alertcondition(ta.crossover(high, upperTarget_1), title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_2), title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_3), title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
-alertcondition(ta.crossover(high, upperTarget_4), title="Target 4 Hit (Up)", message="ATR target 4 reached (upside)")
+alertcondition(t1_hit_up, title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
+alertcondition(t2_hit_up, title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
+alertcondition(t3_hit_up, title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
+alertcondition(t4_hit_up, title="Target 4 Hit (Up)", message="ATR target 4 reached (upside)")
 
-alertcondition(ta.crossunder(low, lowerTarget_1), title="Target 1 Hit (Down)", message="ATR target 1 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_2), title="Target 2 Hit (Down)", message="ATR target 2 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_3), title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
-alertcondition(ta.crossunder(low, lowerTarget_4), title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
+alertcondition(t1_hit_dn, title="Target 1 Hit (Down)", message="ATR target 1 reached (downside)")
+alertcondition(t2_hit_dn, title="Target 2 Hit (Down)", message="ATR target 2 reached (downside)")
+alertcondition(t3_hit_dn, title="Target 3 Hit (Down)", message="ATR target 3 reached (downside)")
+alertcondition(t4_hit_dn, title="Target 4 Hit (Down)", message="ATR target 4 reached (downside)")
 
 alertcondition(isBreakout, title = 'Breakout', message = 'Breakout')
 alertcondition(isBreakdown, title = 'Breakdown', message = 'Breakdown')
 alertcondition(isBreakout or isBreakdown, title = 'Breakout or Breakdown', message = 'Breakout or Breakdown')
 
-alertcondition(ta.crossover(ehlers_sig, 1), 'Strong Buy Signal (Ehlers)', 'Strong Bullish Change Detected')
-alertcondition(ta.crossunder(ehlers_sig, -1), 'Strong Sell Signal (Ehlers)', 'Strong Bearish Change Detected')
-alertcondition(ta.crossover(ehlers_sig, 0), 'Buy Signal (Ehlers)', 'Bullish Change Detected')
-alertcondition(ta.crossunder(ehlers_sig, 0), 'Sell Signal (Ehlers)', 'Bearish Change Detected')
-alertcondition(ta.crossover(ehlers_sig, 0) or ta.crossover(ehlers_sig, 1), 'All Buy Signals (Ehlers)', 'Any Bullish Change Detected')
-alertcondition(ta.crossunder(ehlers_sig, 0) or ta.crossunder(ehlers_sig, -1), 'All Sell Signals (Ehlers)', 'Any Bearish Change Detected')
+// Ehlers Specific Alerts
+// Pre-calculate conditions to avoid execution warnings
+ehlersCross0Up = ta.crossover(ehlers_sig, 0)
+ehlersCross1Up = ta.crossover(ehlers_sig, 1)
+ehlersCross0Down = ta.crossunder(ehlers_sig, 0)
+ehlersCross1Down = ta.crossunder(ehlers_sig, -1)
+
+// Pre-calculate ATR Target Crossovers (Global Scope)
+t1_hit_up = ta.crossover(high, upperTarget_1)
+t2_hit_up = ta.crossover(high, upperTarget_2)
+t3_hit_up = ta.crossover(high, upperTarget_3)
+t4_hit_up = ta.crossover(high, upperTarget_4)
+
+t1_hit_dn = ta.crossunder(low, lowerTarget_1)
+t2_hit_dn = ta.crossunder(low, lowerTarget_2)
+t3_hit_dn = ta.crossunder(low, lowerTarget_3)
+t4_hit_dn = ta.crossunder(low, lowerTarget_4)
+
+alertcondition(ehlersCross1Up, 'Strong Buy Signal (Ehlers)', 'Strong Bullish Change Detected')
+alertcondition(ehlersCross1Down, 'Strong Sell Signal (Ehlers)', 'Strong Bearish Change Detected')
+alertcondition(ehlersCross0Up, 'Buy Signal (Ehlers)', 'Bullish Change Detected')
+alertcondition(ehlersCross0Down, 'Sell Signal (Ehlers)', 'Bearish Change Detected')
+alertcondition(ehlersCross0Up or ehlersCross1Up, 'All Buy Signals (Ehlers)', 'Any Bullish Change Detected')
+alertcondition(ehlersCross0Down or ehlersCross1Down, 'All Sell Signals (Ehlers)', 'Any Bearish Change Detected')
