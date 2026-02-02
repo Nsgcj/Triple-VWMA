@@ -824,6 +824,17 @@ if targetReached and enableATRAlerts and barstate.isconfirmed
           " pips (" + str.tostring(percentReached, "#.#") + "% of period ATR)",
           alert.freq_once_per_bar)
 
+// Pre-calculate ATR Target Crossovers (Global Scope)
+t1_hit_up = ta.crossover(high, upperTarget_1)
+t2_hit_up = ta.crossover(high, upperTarget_2)
+t3_hit_up = ta.crossover(high, upperTarget_3)
+t4_hit_up = ta.crossover(high, upperTarget_4)
+
+t1_hit_dn = ta.crossunder(low, lowerTarget_1)
+t2_hit_dn = ta.crossunder(low, lowerTarget_2)
+t3_hit_dn = ta.crossunder(low, lowerTarget_3)
+t4_hit_dn = ta.crossunder(low, lowerTarget_4)
+
 alertcondition(t1_hit_up, title="Target 1 Hit (Up)", message="ATR target 1 reached (upside)")
 alertcondition(t2_hit_up, title="Target 2 Hit (Up)", message="ATR target 2 reached (upside)")
 alertcondition(t3_hit_up, title="Target 3 Hit (Up)", message="ATR target 3 reached (upside)")
@@ -844,17 +855,6 @@ ehlersCross0Up = ta.crossover(ehlers_sig, 0)
 ehlersCross1Up = ta.crossover(ehlers_sig, 1)
 ehlersCross0Down = ta.crossunder(ehlers_sig, 0)
 ehlersCross1Down = ta.crossunder(ehlers_sig, -1)
-
-// Pre-calculate ATR Target Crossovers (Global Scope)
-t1_hit_up = ta.crossover(high, upperTarget_1)
-t2_hit_up = ta.crossover(high, upperTarget_2)
-t3_hit_up = ta.crossover(high, upperTarget_3)
-t4_hit_up = ta.crossover(high, upperTarget_4)
-
-t1_hit_dn = ta.crossunder(low, lowerTarget_1)
-t2_hit_dn = ta.crossunder(low, lowerTarget_2)
-t3_hit_dn = ta.crossunder(low, lowerTarget_3)
-t4_hit_dn = ta.crossunder(low, lowerTarget_4)
 
 alertcondition(ehlersCross1Up, 'Strong Buy Signal (Ehlers)', 'Strong Bullish Change Detected')
 alertcondition(ehlersCross1Down, 'Strong Sell Signal (Ehlers)', 'Strong Bearish Change Detected')
