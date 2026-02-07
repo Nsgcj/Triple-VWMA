@@ -31,6 +31,8 @@ getSize(sizeStr) =>
         "Huge" => size.huge
         => size.normal
 
+fixZero(val) => val == 0 ? na : val
+
 // =============================================================================
 // BOLLINGER BANDS SETTINGS
 // =============================================================================
@@ -202,9 +204,9 @@ bbDev = bbMult * ta.stdev(bbSrc, bbLength)
 bbUpper = bbBasis + bbDev
 bbLower = bbBasis - bbDev
 
-plot(showBB ? bbBasis : na, "BB Basis", color=colBBBasis, offset = bbOffset)
-p1 = plot(showBB ? bbUpper : na, "BB Upper", color=colBBUpper, offset = bbOffset)
-p2 = plot(showBB ? bbLower : na, "BB Lower", color=colBBLower, offset = bbOffset)
+plot(showBB ? fixZero(bbBasis) : na, "BB Basis", color=colBBBasis, offset = bbOffset)
+p1 = plot(showBB ? fixZero(bbUpper) : na, "BB Upper", color=colBBUpper, offset = bbOffset)
+p2 = plot(showBB ? fixZero(bbLower) : na, "BB Lower", color=colBBLower, offset = bbOffset)
 fill(p1, p2, title = "BB Background", color=showBB ? colBBFill : na)
 
 // =============================================================================
@@ -227,7 +229,7 @@ ehlers_sig = ehlers_slo > 0 ? ehlers_slo > nz(ehlers_slo[1]) ? 2 : 1 : ehlers_sl
 
 tmaColor = ehlers_sig > 1 ? color.green : ehlers_sig > 0 ? color.lime : ehlers_sig < -1 ? color.maroon : ehlers_sig < 0 ? color.red : color.white
 barcolor(ehlers_bar ? tmaColor : na)
-plot(ehlers_filt, title = 'Ehlers Tma', color = tmaColor, linewidth = 2)
+plot(fixZero(ehlers_filt), title = 'Ehlers Tma', color = tmaColor, linewidth = 2)
 
 // =============================================================================
 // TRIPLE VWMA CALCULATIONS
@@ -236,9 +238,9 @@ vwma1 = ta.vwma(src1, len1)
 vwma2 = ta.vwma(src2, len2)
 vwma3 = ta.vwma(src3, len3)
 
-plot(show1 ? vwma1 : na, title="VWMA 1", color=color1, offset=offset1)
-plot(show2 ? vwma2 : na, title="VWMA 2", color=color2, offset=offset2)
-plot(show3 ? vwma3 : na, title="VWMA 3", color=color3, offset=offset3)
+plot(show1 ? fixZero(vwma1) : na, title="VWMA 1", color=color1, offset=offset1)
+plot(show2 ? fixZero(vwma2) : na, title="VWMA 2", color=color2, offset=offset2)
+plot(show3 ? fixZero(vwma3) : na, title="VWMA 3", color=color3, offset=offset3)
 
 // Filter Calculations
 volSma = ta.sma(volume, 10)
@@ -729,7 +731,7 @@ else if currentTrend == -1
     trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
 
 colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
-plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
+plot(showAdaptiveTrail and currentTrend != 0 ? fixZero(trailPrice) : na, "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
 
 trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
