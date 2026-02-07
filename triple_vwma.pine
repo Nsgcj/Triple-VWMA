@@ -32,6 +32,21 @@ getSize(sizeStr) =>
         => size.normal
 
 // =============================================================================
+// BOLLINGER BANDS SETTINGS
+// =============================================================================
+grpBB = "Bollinger Bands"
+showBB = input.bool(true, "Show Bollinger Bands", group=grpBB)
+bbLength = input.int(20, "Length", minval = 1, group=grpBB)
+bbMaType = input.string("SMA", "Basis MA Type", options = ["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group=grpBB)
+bbSrc = input.source(close, "Source", group=grpBB)
+bbMult = input.float(2.0, "StdDev", minval = 0.001, maxval = 50, group=grpBB)
+bbOffset = input.int(0, "Offset", minval = -500, maxval = 500, group=grpBB)
+colBBBasis = input.color(#2962FF, "Basis Color", group=grpBB)
+colBBUpper = input.color(#F23645, "Upper Band Color", group=grpBB)
+colBBLower = input.color(#089981, "Lower Band Color", group=grpBB)
+colBBFill = input.color(color.new(color.blue, 95), "Background Fill", group=grpBB)
+
+// =============================================================================
 // TRIPLE VWMA SETTINGS
 // =============================================================================
 
@@ -170,6 +185,27 @@ upCol = input.color(color.new(color.green, 0), title = '', inline = 'colbp', gro
 dnCol = input.color(color.new(color.red, 0), title = '', inline = 'colbp', group=grpBP)
 fill = input.bool(true, title = 'Fill Color', inline = 'colbp', group=grpBP)
 bpPosInput = input.string("Middle Right", "BP Table Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Quarter Left", "Quarter Right"], group=grpBP)
+
+// =============================================================================
+// BOLLINGER BANDS CALCULATIONS
+// =============================================================================
+ma(source, length, _type) =>
+    switch _type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "SMMA (RMA)" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.vwma(source, length)
+
+bbBasis = ma(bbSrc, bbLength, bbMaType)
+bbDev = bbMult * ta.stdev(bbSrc, bbLength)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+plot(showBB ? bbBasis : na, "BB Basis", color=colBBBasis, offset = bbOffset)
+p1 = plot(showBB ? bbUpper : na, "BB Upper", color=colBBUpper, offset = bbOffset)
+p2 = plot(showBB ? bbLower : na, "BB Lower", color=colBBLower, offset = bbOffset)
+fill(p1, p2, title = "BB Background", color=showBB ? colBBFill : na)
 
 // =============================================================================
 // EHLERS TMA CALCULATIONS
