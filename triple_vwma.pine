@@ -316,21 +316,25 @@ CreateLabel(p, i, c, r, v, visible) =>
         matrix.set(labels_bp, 0, i, la)
 
 // Call unconditionally to avoid warnings
-for i = 0 to nbr - 1 by 1
+// Iterate through fixed max size (5) to ensure consistency
+for i = 0 to 4 by 1
     // Calculate positions regardless of visibility (low cost)
     hi = h_bp[1] + step_bp * i
     lo = l_bp[1] - step_bp * i
 
-    // Pass showBP state to drawing functions
-    CreateLine(hi, i, upCol, showBP)
-    CreateLine(lo, 5 + i, dnCol, showBP)
+    // Determine visibility based on configured number of lines
+    isVisible = showBP and i < nbr
+
+    // Pass visibility state to drawing functions
+    CreateLine(hi, i, upCol, isVisible)
+    CreateLine(lo, 5 + i, dnCol, isVisible)
 
     if green_bp
-        CreateLabel(hi, i, upCol, i, 0, showBP)
-        CreateLabel(lo, 5 + i, dnCol, i, 1, showBP)
+        CreateLabel(hi, i, upCol, i, 0, isVisible)
+        CreateLabel(lo, 5 + i, dnCol, i, 1, isVisible)
     else
-        CreateLabel(hi, i, upCol, i, 2, showBP)
-        CreateLabel(lo, 5 + i, dnCol, i, 3, showBP)
+        CreateLabel(hi, i, upCol, i, 2, isVisible)
+        CreateLabel(lo, 5 + i, dnCol, i, 3, isVisible)
 
 // Fill
 if showBP and fill
@@ -642,11 +646,9 @@ else if currentTrend == -1
     trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
 
 colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
-plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na,
-     "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
+plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
 
-trailExit = (currentTrend == 1 and close < trailPrice) or
-            (currentTrend == -1 and close > trailPrice)
+trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
 // -----------------------------------------------------------------------------
 // SECTION 6: ATR TABLE DISPLAY
