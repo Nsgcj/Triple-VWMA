@@ -683,16 +683,9 @@ if barstate.islast and showPrevATR
     row = 0 + atrOffset
 
     // === HEADER ===
-    headerText = activeSessionName != "Off-Hours"
-                 ? "📊 " + activeSessionName
-                 : isMinuteBased
-                   ? str.format("📊 {0}M ATR", currentMinutes)
-                   : "📊 ATR ANALYSIS"
+    headerText = activeSessionName != "Off-Hours" ? "📊 " + activeSessionName : isMinuteBased ? str.format("📊 {0}M ATR", currentMinutes) : "📊 ATR ANALYSIS"
 
-    table.cell(atr_table, 0, row, headerText,
-               bgcolor=color.new(#2962FF, 20),
-               text_color=color.white,
-               text_size=atrSize)
+    table.cell(atr_table, 0, row, headerText, bgcolor=color.new(#2962FF, 20), text_color=color.white, text_size=atrSize)
     table.merge_cells(atr_table, 0, row, 1, row)
     row += 1
 
@@ -751,55 +744,26 @@ if barstate.islast and showPrevATR
 
         // Progress Bar
         pct_color = getProgressColor(percentReached)
-        progress_icon = percentReached >= 100 ? "✓" :
-                        percentReached >= 75 ? "●●●○" :
-                        percentReached >= 50 ? "●●○○" :
-                        percentReached >= 25 ? "●○○○" : "○○○○"
+        progress_icon = percentReached >= 100 ? "✓" : percentReached >= 75 ? "●●●○" : percentReached >= 50 ? "●●○○" : percentReached >= 25 ? "●○○○" : "○○○○"
 
-        table.cell(atr_table, 0, row, "Progress",
-                   bgcolor=color.new(color.gray, 80),
-                   text_color=color.white,
-                   text_size=atrSize)
-        table.cell(atr_table, 1, row,
-                   str.format('{0} {1, number, #.#}%', progress_icon, percentReached),
-                   bgcolor=pct_color,
-                   text_color=color.white,
-                   text_size=atrSize)
+        table.cell(atr_table, 0, row, "Progress", bgcolor=color.new(color.gray, 80), text_color=color.white, text_size=atrSize)
+        table.cell(atr_table, 1, row, str.format('{0} {1, number, #.#}%', progress_icon, percentReached), bgcolor=pct_color, text_color=color.white, text_size=atrSize)
         row += 1
 
         // Phase
-        phase_text = sessionRangeCompletion < 60 ? "🔵 EARLY" :
-                     sessionRangeCompletion < 90 ? "🟢 LOCK" : "🔴 EXIT"
-        phase_color = sessionRangeCompletion < 60 ? color.new(color.aqua, 40) :
-                      sessionRangeCompletion < 90 ? color.new(color.lime, 40) :
-                                                     color.new(color.red, 40)
+        phase_text = sessionRangeCompletion < 60 ? "🔵 EARLY" : sessionRangeCompletion < 90 ? "🟢 LOCK" : "🔴 EXIT"
+        phase_color = sessionRangeCompletion < 60 ? color.new(color.aqua, 40) : sessionRangeCompletion < 90 ? color.new(color.lime, 40) : color.new(color.red, 40)
 
-        table.cell(atr_table, 0, row, "Phase",
-                   bgcolor=color.new(color.gray, 80),
-                   text_color=color.white,
-                   text_size=atrSize)
-        table.cell(atr_table, 1, row,
-                   str.format('{0} ({1, number, #}%)', phase_text, sessionRangeCompletion),
-                   bgcolor=phase_color,
-                   text_color=color.white,
-                   text_size=atrSize)
+        table.cell(atr_table, 0, row, "Phase", bgcolor=color.new(color.gray, 80), text_color=color.white, text_size=atrSize)
+        table.cell(atr_table, 1, row, str.format('{0} ({1, number, #}%)', phase_text, sessionRangeCompletion), bgcolor=phase_color, text_color=color.white, text_size=atrSize)
         row += 1
 
         // Active Session (only for intraday)
         if isIntraday and (isHourly or is4Hour)
-            session_color = inNY ? color.new(color.blue, 30) :
-                           inLondon ? color.new(color.green, 30) :
-                           inAsia ? color.new(color.yellow, 30) :
-                                   color.new(color.gray, 50)
+            session_color = inNY ? color.new(color.blue, 30) : inLondon ? color.new(color.green, 30) : inAsia ? color.new(color.yellow, 30) : color.new(color.gray, 50)
 
-            table.cell(atr_table, 0, row, "Active Session",
-                       bgcolor=color.new(color.gray, 80),
-                       text_color=color.white,
-                       text_size=atrSize)
-            table.cell(atr_table, 1, row, activeSessionName,
-                       bgcolor=session_color,
-                       text_color=color.white,
-                       text_size=atrSize)
+            table.cell(atr_table, 0, row, "Active Session", bgcolor=color.new(color.gray, 80), text_color=color.white, text_size=atrSize)
+            table.cell(atr_table, 1, row, activeSessionName, bgcolor=session_color, text_color=color.white, text_size=atrSize)
             row += 1
 
         // === TARGET LEVELS ===
@@ -915,14 +879,11 @@ if showSop and barstate.islast
                text_color=color.new(color.white, textAlphaSwing),
                text_size=sopSize)
 
-    iconSwing = currentTrend == 1 ? "🟢 BULL" :
-                currentTrend == -1 ? "🔴 BEAR" : "⚪ FLAT"
+    iconSwing = currentTrend == 1 ? "🟢 BULL" : currentTrend == -1 ? "🔴 BEAR" : "⚪ FLAT"
 
-    txtSwing = sessionRangeCompletion < 60 ? "Early" :
-               sessionRangeCompletion < 90 ? "Lock" : "Exit"
+    txtSwing = sessionRangeCompletion < 60 ? "Early" : sessionRangeCompletion < 90 ? "Lock" : "Exit"
 
-    swingContent = iconSwing + " | " + txtSwing +
-                   " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
+    swingContent = iconSwing + " | " + txtSwing + " (" + str.tostring(sessionRangeCompletion, "#") + "%)"
 
     if currentTrend == 0
         swingContent := "⚪ FLAT | " + (isChoppy ? "CHOP" : "CONSOL")
@@ -943,11 +904,9 @@ if showSop and barstate.islast
                text_size=sopSize)
 
     iconScalp = m1Trend == 1 ? "🟢 BULL" : "🔴 BEAR"
-    txtScalp = scalpCompletion < 40 ? "Early" :
-               scalpCompletion < 80 ? "Hold" : "Exhaust"
+    txtScalp = scalpCompletion < 40 ? "Early" : scalpCompletion < 80 ? "Hold" : "Exhaust"
 
-    scalpContent = iconScalp + " | " + txtScalp +
-                   " (" + str.tostring(scalpCompletion, "#") + "%)"
+    scalpContent = iconScalp + " | " + txtScalp + " (" + str.tostring(scalpCompletion, "#") + "%)"
 
     table.cell(sopTable, 1, row, scalpContent,
                bgcolor=rowBgScalp,
@@ -956,15 +915,10 @@ if showSop and barstate.islast
     row += 1
 
     // Footer
-    footerText = isScalpMode
-                 ? "Focus: Counter-Trend or Scalp Drives"
-                 : "Focus: Trend Extension & Trail Management"
+    footerText = isScalpMode ? "Focus: Counter-Trend or Scalp Drives" : "Focus: Trend Extension & Trail Management"
 
     table.merge_cells(sopTable, 0, row, 1, row)
-    table.cell(sopTable, 0, row, footerText,
-               bgcolor=color.new(color.gray, 30),
-               text_color=color.white,
-               text_size=size.tiny)
+    table.cell(sopTable, 0, row, footerText, bgcolor=color.new(color.gray, 30), text_color=color.white, text_size=size.tiny)
 
 // =============================================================================
 // BREAKOUT FINDER LOGIC
