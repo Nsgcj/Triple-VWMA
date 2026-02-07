@@ -216,9 +216,11 @@ ehlers_coef = 0.0
 ehlers_l2 = ehlers_length / 2.0
 for i = 1 to ehlers_length by 1
     c = i < ehlers_l2 ? i : i > ehlers_l2 ? ehlers_length + 1 - i : ehlers_l2
-    ehlers_filt := ehlers_filt + c * nz(ehlers_src[i - 1])
+    ehlers_filt := ehlers_filt + c * ehlers_src[i - 1]
     ehlers_coef := ehlers_coef + c
 ehlers_filt := ehlers_coef != 0 ? ehlers_filt / ehlers_coef : na
+if ehlers_filt == 0
+    ehlers_filt := na
 
 ehlers_slo = ehlers_src - ehlers_filt
 ehlers_sig = ehlers_slo > 0 ? ehlers_slo > nz(ehlers_slo[1]) ? 2 : 1 : ehlers_slo < 0 ? ehlers_slo < nz(ehlers_slo[1]) ? -2 : -1 : 0
