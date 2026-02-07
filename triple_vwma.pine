@@ -315,26 +315,71 @@ CreateLabel(p, i, c, r, v, visible) =>
         la = label.new(b_bp + 1, p, text = str.tostring(matrix.get(vals_bp, r, v), format.percent), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c)
         matrix.set(labels_bp, 0, i, la)
 
-// Call unconditionally to avoid warnings
-// Iterate through fixed max size (5) to ensure consistency
-for i = 0 to 4 by 1
-    // Calculate positions regardless of visibility (low cost)
-    hi = h_bp[1] + step_bp * i
-    lo = l_bp[1] - step_bp * i
+// Call unconditionally to avoid warnings - Unrolled Loop
+// Iteration 0
+hi0 = h_bp[1] + step_bp * 0
+lo0 = l_bp[1] - step_bp * 0
+vis0 = showBP and 0 < nbr
+CreateLine(hi0, 0, upCol, vis0)
+CreateLine(lo0, 5, dnCol, vis0)
+if green_bp
+    CreateLabel(hi0, 0, upCol, 0, 0, vis0)
+    CreateLabel(lo0, 5, dnCol, 0, 1, vis0)
+else
+    CreateLabel(hi0, 0, upCol, 0, 2, vis0)
+    CreateLabel(lo0, 5, dnCol, 0, 3, vis0)
 
-    // Determine visibility based on configured number of lines
-    isVisible = showBP and i < nbr
+// Iteration 1
+hi1 = h_bp[1] + step_bp * 1
+lo1 = l_bp[1] - step_bp * 1
+vis1 = showBP and 1 < nbr
+CreateLine(hi1, 1, upCol, vis1)
+CreateLine(lo1, 6, dnCol, vis1)
+if green_bp
+    CreateLabel(hi1, 1, upCol, 1, 0, vis1)
+    CreateLabel(lo1, 6, dnCol, 1, 1, vis1)
+else
+    CreateLabel(hi1, 1, upCol, 1, 2, vis1)
+    CreateLabel(lo1, 6, dnCol, 1, 3, vis1)
 
-    // Pass visibility state to drawing functions
-    CreateLine(hi, i, upCol, isVisible)
-    CreateLine(lo, 5 + i, dnCol, isVisible)
+// Iteration 2
+hi2 = h_bp[1] + step_bp * 2
+lo2 = l_bp[1] - step_bp * 2
+vis2 = showBP and 2 < nbr
+CreateLine(hi2, 2, upCol, vis2)
+CreateLine(lo2, 7, dnCol, vis2)
+if green_bp
+    CreateLabel(hi2, 2, upCol, 2, 0, vis2)
+    CreateLabel(lo2, 7, dnCol, 2, 1, vis2)
+else
+    CreateLabel(hi2, 2, upCol, 2, 2, vis2)
+    CreateLabel(lo2, 7, dnCol, 2, 3, vis2)
 
-    if green_bp
-        CreateLabel(hi, i, upCol, i, 0, isVisible)
-        CreateLabel(lo, 5 + i, dnCol, i, 1, isVisible)
-    else
-        CreateLabel(hi, i, upCol, i, 2, isVisible)
-        CreateLabel(lo, 5 + i, dnCol, i, 3, isVisible)
+// Iteration 3
+hi3 = h_bp[1] + step_bp * 3
+lo3 = l_bp[1] - step_bp * 3
+vis3 = showBP and 3 < nbr
+CreateLine(hi3, 3, upCol, vis3)
+CreateLine(lo3, 8, dnCol, vis3)
+if green_bp
+    CreateLabel(hi3, 3, upCol, 3, 0, vis3)
+    CreateLabel(lo3, 8, dnCol, 3, 1, vis3)
+else
+    CreateLabel(hi3, 3, upCol, 3, 2, vis3)
+    CreateLabel(lo3, 8, dnCol, 3, 3, vis3)
+
+// Iteration 4
+hi4 = h_bp[1] + step_bp * 4
+lo4 = l_bp[1] - step_bp * 4
+vis4 = showBP and 4 < nbr
+CreateLine(hi4, 4, upCol, vis4)
+CreateLine(lo4, 9, dnCol, vis4)
+if green_bp
+    CreateLabel(hi4, 4, upCol, 4, 0, vis4)
+    CreateLabel(lo4, 9, dnCol, 4, 1, vis4)
+else
+    CreateLabel(hi4, 4, upCol, 4, 2, vis4)
+    CreateLabel(lo4, 9, dnCol, 4, 3, vis4)
 
 // Fill
 if showBP and fill
@@ -674,7 +719,7 @@ atrSize = getSize(atrTableSize)
 baseRows = 3  // Header + Prev ATR + Current ATR
 directionRows = showATRDirection ? 4 : 0
 sessionRow = (showATRDirection and isIntraday and (isHourly or is4Hour)) ? 1 : 0
-targetRows = (showATRDirection and showMultiLevelTargets) ? 4 : 0
+targetRows = (showATRDirection and showMultiLevelTargets) ? 5 : 0
 totalRows = baseRows + directionRows + sessionRow + targetRows + atrOffset
 
 var table atr_table = table.new(getPosition(atrTablePosition), 2, totalRows, border_width=1)
