@@ -31,7 +31,7 @@ getSize(sizeStr) =>
         "Huge" => size.huge
         => size.normal
 
-fixZero(val) => val == 0 ? na : val
+fixZero(val) => (na(val) or val <= 0) ? na : val
 
 // =============================================================================
 // BOLLINGER BANDS SETTINGS
@@ -345,7 +345,7 @@ CreateLine(p, i, c, visible) =>
     prevLine = matrix.get(lines_bp, 0, i)
     line.delete(prevLine)
     if visible
-        li = line.new(b_bp[1], p, b_bp, p, color = c, width = 2)
+        li = line.new(b_bp[1], fixZero(p), b_bp, fixZero(p), color = c, width = 2)
         matrix.set(lines_bp, 0, i, li)
 
 CreateLabel(p, i, c, r, v, visible) =>
@@ -718,16 +718,16 @@ var float trailPrice = na
 if currentTrend == 0
     trailPrice := na
 else if triggerBuy
-    trailPrice := low - (atrM5 * trailMult)
+    trailPrice := fixZero(low - (atrM5 * trailMult))
 else if triggerSell
-    trailPrice := high + (atrM5 * trailMult)
+    trailPrice := fixZero(high + (atrM5 * trailMult))
 else if currentTrend == 1
     peak = high
-    calcTrail = peak - (atrM5 * trailMult)
+    calcTrail = fixZero(peak - (atrM5 * trailMult))
     trailPrice := na(trailPrice) ? calcTrail : math.max(trailPrice, calcTrail)
 else if currentTrend == -1
     peak = low
-    calcTrail = peak + (atrM5 * trailMult)
+    calcTrail = fixZero(peak + (atrM5 * trailMult))
     trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
 
 colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
@@ -1083,16 +1083,16 @@ isBreakdown = not na(bomin) and num1 >= mintest
 
 if showBF
     if isBreakout
-        line.new(x1 = bar_index, y1 = bomax, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
-        line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bostart, y2 = bomax - chwidth, color = bocolorup, style = lstyle)
-        line.new(x1 = bostart, y1 = bomax - chwidth, x2 = bostart, y2 = bomax, color = bocolorup, style = lstyle)
-        line.new(x1 = bar_index, y1 = bomax - chwidth, x2 = bar_index, y2 = bomax, color = bocolorup, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomax), x2 = bostart, y2 = fixZero(bomax), color = bocolorup, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomax - chwidth), x2 = bostart, y2 = fixZero(bomax - chwidth), color = bocolorup, style = lstyle)
+        line.new(x1 = bostart, y1 = fixZero(bomax - chwidth), x2 = bostart, y2 = fixZero(bomax), color = bocolorup, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomax - chwidth), x2 = bar_index, y2 = fixZero(bomax), color = bocolorup, style = lstyle)
 
     if isBreakdown
-        line.new(x1 = bar_index, y1 = bomin, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
-        line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin + chwidth, color = bocolordown, style = lstyle)
-        line.new(x1 = bostart1, y1 = bomin + chwidth, x2 = bostart1, y2 = bomin, color = bocolordown, style = lstyle)
-        line.new(x1 = bar_index, y1 = bomin + chwidth, x2 = bar_index, y2 = bomin, color = bocolordown, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomin), x2 = bostart1, y2 = fixZero(bomin), color = bocolordown, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomin + chwidth), x2 = bostart1, y2 = fixZero(bomin + chwidth), color = bocolordown, style = lstyle)
+        line.new(x1 = bostart1, y1 = fixZero(bomin + chwidth), x2 = bostart1, y2 = fixZero(bomin), color = bocolordown, style = lstyle)
+        line.new(x1 = bar_index, y1 = fixZero(bomin + chwidth), x2 = bar_index, y2 = fixZero(bomin), color = bocolordown, style = lstyle)
 
 plotshape(showBF and isBreakout, location = location.belowbar, style = shape.triangleup, color = bocolorup, size = size.small)
 plotshape(showBF and isBreakdown, location = location.abovebar, style = shape.triangledown, color = bocolordown, size = size.small)
