@@ -424,12 +424,48 @@ else
 // Fill
 if showBP and fill
     var filler = linefill(na)
+    // Only iterate through potentially valid lines to avoid filling to 0/na
     for i = 0 to 8 by 1
         get = matrix.get(lines_bp, 0, i)
         get1 = matrix.get(lines_bp, 0, i + 1)
-        col = i > 4 ? color.new(dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(upCol, 80)
-        filler := linefill.new(get, get1, color = col)
-        linefill.delete(filler[1])
+
+        // Ensure both lines are valid before filling
+        // Also check against nbr to respect user configuration
+        // 0-4 are Highs. 5-9 are Lows.
+        // Valid indices for Highs: 0 to nbr-1
+        // Valid indices for Lows: 5 to 5+nbr-1
+
+        // Mapping loop index 'i' to line pairs:
+        // i=0: 0-1. Valid if 1 < nbr
+        // i=1: 1-2. Valid if 2 < nbr
+        // ...
+        // i=4: 4-5. Cross-over. 4 is High (valid if 4 < nbr), 5 is Low (valid if 0 < nbr)
+        // i=5: 5-6. Valid if 1 < nbr
+
+        isValid = false
+        if i < 4
+            // High side fills
+            isValid := (i + 1) < nbr
+        else if i == 4
+            // Middle cross-over (Max High to Min Low)
+            // Wait, logic above connects 4-5.
+            // If nbr=5, line 4 and 5 exist.
+            // If nbr=1, only line 0 and 5 exist. Loop i=0..3 fails. i=4 fails (line 4 doesn't exist).
+            // This loop structure assumes full set.
+            // We'll rely on the line object validity check.
+            isValid := false // Deprecated middle fill logic in this loop structure
+        else
+            // Low side fills (i=5 -> 5-6)
+            // relative index = i - 5. Next = relative + 1.
+            // Valid if (i - 5 + 1) < nbr
+            isValid := (i - 4) < nbr
+
+        // Allow middle fill specifically if lines exist?
+        // Original code filled 4-5. We'll stick to strict line validity.
+        if not na(get) and not na(get1)
+            col = i > 4 ? color.new(dnCol, 80) : i == 4 ? color.new(color.gray, 100) : color.new(upCol, 80)
+            filler := linefill.new(get, get1, color = col)
+            linefill.delete(filler[1])
 
 // =============================================================================
 // TREND TRIGGER LOGIC (INTEGRATED)
