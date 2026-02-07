@@ -840,7 +840,7 @@ sopOffset = getRowOffset(sopPosInput)
 sopSize = getSize(sopSizeInput)
 isScalpMode = activeSessionName == "Off-Hours"
 
-var table sopTable = table.new(sopPos, 2, 5 + sopOffset, border_width=1)
+var table sopTable = table.new(sopPos, 2, 6 + sopOffset, border_width=1)
 
 if showSop and barstate.islast
     row = 0 + sopOffset
