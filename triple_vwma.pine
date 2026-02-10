@@ -95,16 +95,22 @@ atrTableSize = input.string("Small", title="ATR Table Text Size",
     options=["Tiny", "Small", "Normal", "Large", "Huge"], group = grpAtrDisplay)
 
 grpAtrLogic = "ATR Table - Logic"
+atrMode = input.string("Intraday Daily Lock", "ATR Mode", options=["Intraday Daily Lock", "Dynamic"], group=grpAtrLogic)
 atrLength = input.int(14, title = 'ATR Length', minval = 1, group = grpAtrLogic)
 pipMultiplier = input.float(10000, title = 'Pip Multiplier', group = grpAtrLogic,
     tooltip = '10000 for standard forex, 100 for JPY pairs, 1 for crypto', options=[1, 100, 10000])
 enableATRAlerts = input.bool(true, title = 'Enable ATR Target Alerts', group = grpAtrLogic)
 
-grpAdaptive = "Adaptive Session Trail"
-showAdaptiveTrail = input.bool(true, "Show Adaptive Trail", group=grpAdaptive)
-trailMultLow = input.float(3.0, "Early Session Multiplier", group=grpAdaptive)
-trailMultMid = input.float(2.5, "Mid Session Multiplier (60-90%)", group=grpAdaptive)
-trailMultHigh = input.float(1.5, "Exhaustion Multiplier (>90%)", group=grpAdaptive)
+// 75% Goal Line Settings
+grpGoal = "75% Goal Line"
+showGoalLine = input.bool(true, "Show 75% Daily Goal Line", group=grpGoal)
+colGoalLine = input.color(color.gold, "Goal Line Color", group=grpGoal)
+styleGoalLine = input.string(line.style_dashed, "Line Style", options=[line.style_solid, line.style_dashed, line.style_dotted], group=grpGoal)
+
+grpAdaptive = "Stepped Trailing Stop"
+showAdaptiveTrail = input.bool(true, "Show Stepped Trail", group=grpAdaptive)
+trailMultBase = input.float(3.0, "Base Wide Stop (x M5 ATR)", group=grpAdaptive)
+trailMultTight = input.float(1.5, "Tight Trail at 75% (x M1 ATR)", group=grpAdaptive)
 trailColorLong = input.color(color.lime, "Long Trail Color", group=grpAdaptive)
 trailColorShort = input.color(color.red, "Short Trail Color", group=grpAdaptive)
 
@@ -375,7 +381,253 @@ if showMtf and barstate.islast
     table.cell(mtfTable, 1, 5, s5, bgcolor=getTrendColor(s5), text_color=color.white)
 
 // =============================================================================
-// OFF-HOURS SCALPING & TRAIL LOGIC
+// CONSOLIDATED ATR & SESSION LOGIC
+// =============================================================================
+
+// --- SECTION 1: SESSION DETECTION ---
+isInSession(sess) =>
+    not na(time(timeframe.period, sess, "America/New_York"))
+
+getActiveSession() =>
+    inAsia = isInSession(kzAsia)
+    inLondon = isInSession(kzLondon)
+    inNY = isInSession(kzNY)
+    inLondonClose = isInSession(kzLondonClose)
+
+    sessionName = "Off-Hours"
+    if inAsia
+        sessionName := "Asian Kill Zone"
+    else if inLondon
+        sessionName := "London Open Kill Zone"
+    else if inNY
+        sessionName := "NY Open Kill Zone"
+    else if inLondonClose
+        sessionName := "London Close Kill Zone"
+
+    isActive = inAsia or inLondon or inNY or inLondonClose
+    [sessionName, isActive, inAsia, inLondon, inNY, inLondonClose]
+
+[activeSessionName, isAnySession, inAsia, inLondon, inNY, inLondonClose] = getActiveSession()
+
+trackSessionRange() =>
+    var float sessionOpen = na
+    var float sessionHigh = na
+    var float sessionLow = na
+    var bool newSession = false
+
+    wasActive = isAnySession[1]
+    newSession := activeSessionName != activeSessionName[1] and activeSessionName != "Off-Hours"
+
+    if newSession or barstate.isfirst
+        sessionOpen := open
+        sessionHigh := high
+        sessionLow := low
+    else
+        sessionHigh := math.max(nz(sessionHigh, high), high)
+        sessionLow := math.min(nz(sessionLow, low), low)
+
+    if not isAnySession and not wasActive and na(sessionOpen)
+        sessionOpen := open
+
+    [sessionOpen, sessionHigh, sessionLow, newSession]
+
+[activeSessionOpen, sessHigh, sessLow, newSess] = trackSessionRange()
+
+// --- SECTION 2: TIMEFRAME & ATR CALCULATIONS ---
+isMonthly = timeframe.ismonthly
+isWeekly = timeframe.isweekly
+isDaily = timeframe.isdaily
+isIntraday = timeframe.isintraday
+
+getCurrentMinutes() =>
+    if timeframe.isminutes
+        timeframe.multiplier
+    else if timeframe.isseconds
+        timeframe.multiplier / 60
+    else
+        0
+
+currentMinutes = getCurrentMinutes()
+isHourly = isIntraday and currentMinutes >= 60 and currentMinutes < 1440
+is4Hour = currentMinutes == 240
+isMinuteBased = isIntraday and currentMinutes > 0 and currentMinutes < 60
+
+getATRTimeframe() =>
+    if isMonthly
+        "M"
+    else if isWeekly
+        "W"
+    else if isDaily
+        "D"
+    else if is4Hour or isHourly
+        "240"
+    else if isMinuteBased
+        timeframe.period
+    else
+        "D"
+
+atrTimeframe = getATRTimeframe()
+
+// Fetch Data
+// Daily ATR (Yesterday's Close) & Daily Open
+dailyATR = request.security(syminfo.tickerid, "D", ta.atr(atrLength)[1], lookahead=barmerge.lookahead_on)
+dailyOpen = request.security(syminfo.tickerid, "D", open, lookahead=barmerge.lookahead_on)
+
+// Dynamic ATR (Current Period)
+[periodOpen, periodATR, period_atr_prev, period_atr_current] = request.security(
+    syminfo.tickerid,
+    atrTimeframe,
+    [open, ta.atr(atrLength), ta.atr(atrLength)[1], ta.atr(atrLength)],
+    lookahead = barmerge.lookahead_off)
+
+// M1 ATR for Tight Trail
+m1ATR = request.security(syminfo.tickerid, "1", ta.atr(atrLength))
+m5ATR = request.security(syminfo.tickerid, "5", ta.atr(atrLength))
+
+// SELECT REFERENCE VALUES BASED ON MODE
+var float refATR = na
+var float refOpen = na
+
+if atrMode == "Intraday Daily Lock"
+    refATR := dailyATR
+    refOpen := dailyOpen
+else
+    // Dynamic Mode
+    refATR := periodATR
+    refOpen := (isAnySession ? activeSessionOpen : periodOpen)
+
+atrMeanPips = refATR * pipMultiplier
+
+// --- SECTION 3: ATR TARGETS ---
+getTargetMultipliers() =>
+    if isMonthly
+        [0.5, 1.0, 1.5, 2.0]
+    else if isWeekly
+        [0.5, 0.75, 1.0, 1.5]
+    else if isDaily
+        [0.5, 0.75, 1.0, 1.5]
+    else if isHourly or is4Hour
+        [0.3, 0.5, 0.75, 1.0]
+    else
+        [0.25, 0.5, 0.75, 1.0]
+
+[mult1, mult2, mult3, mult4] = getTargetMultipliers()
+
+upperTarget_1 = refOpen + (refATR * mult1)
+upperTarget_2 = refOpen + (refATR * mult2)
+upperTarget_3 = refOpen + (refATR * mult3)
+upperTarget_4 = refOpen + (refATR * mult4)
+
+lowerTarget_1 = refOpen - (refATR * mult1)
+lowerTarget_2 = refOpen - (refATR * mult2)
+lowerTarget_3 = refOpen - (refATR * mult3)
+lowerTarget_4 = refOpen - (refATR * mult4)
+
+// 75% Goal Targets (From Daily Open)
+target75_Upper = dailyOpen + (dailyATR * 0.75)
+target75_Lower = dailyOpen - (dailyATR * 0.75)
+
+plot(showGoalLine ? target75_Upper : na, "75% Goal Upper", color=colGoalLine, style=styleGoalLine, linewidth=2)
+plot(showGoalLine ? target75_Lower : na, "75% Goal Lower", color=colGoalLine, style=styleGoalLine, linewidth=2)
+
+
+// --- SECTION 4: COMPLETION METRICS ---
+sessionRange = sessHigh - sessLow
+if na(sessionRange)
+    sessionRange := high - low
+
+sessionRangeCompletion = dailyATR != 0 ? (sessionRange / dailyATR) * 100 : 0
+
+moveFromOpen = math.abs(close - refOpen)
+percentReached = refATR != 0 ? (moveFromOpen / refATR) * 100 : 0
+
+bullishMove = (close > refOpen) ? (close - refOpen) * pipMultiplier : 0
+bearishMove = (close < refOpen) ? (refOpen - close) * pipMultiplier : 0
+currentDirectionalPips = bullishMove > 0 ? bullishMove : bearishMove
+targetReached = currentDirectionalPips >= atrMeanPips
+
+// --- SECTION 5: STEPPED TRAILING STOP ---
+// Identify Entry Price (Start of Trend)
+var float entryPrice = na
+if currentTrend != currentTrend[1] and currentTrend != 0
+    entryPrice := close
+
+currentProfitDist = 0.0
+if currentTrend == 1
+    currentProfitDist := close - entryPrice
+else if currentTrend == -1
+    currentProfitDist := entryPrice - close
+
+pctDailyATR = dailyATR != 0 ? (currentProfitDist / dailyATR) : 0
+
+// Determine Stop Price
+var float stopPrice = na
+
+// Reset stop on trend change
+if currentTrend != currentTrend[1]
+    stopPrice := na
+
+calcStop = float(na)
+
+if currentTrend == 1
+    // Long
+    baseStop = low - (m5ATR * trailMultBase)
+
+    // Step 1: BE
+    if pctDailyATR >= 0.25
+        baseStop := math.max(baseStop, entryPrice)
+
+    // Step 2: Lock 15%
+    if pctDailyATR >= 0.50
+        lockPrice = entryPrice + (dailyATR * 0.15)
+        baseStop := math.max(baseStop, lockPrice)
+
+    // Step 3: Tight Trail
+    if pctDailyATR >= 0.75
+        tightStop = high - (m1ATR * trailMultTight)
+        baseStop := math.max(baseStop, tightStop)
+
+    calcStop := baseStop
+    // Latch upward
+    if not na(stopPrice) and currentTrend == currentTrend[1]
+        stopPrice := math.max(stopPrice, calcStop)
+    else
+        stopPrice := calcStop
+
+else if currentTrend == -1
+    // Short
+    baseStop = high + (m5ATR * trailMultBase)
+
+    // Step 1: BE
+    if pctDailyATR >= 0.25
+        baseStop := math.min(baseStop, entryPrice)
+
+    // Step 2: Lock 15%
+    if pctDailyATR >= 0.50
+        lockPrice = entryPrice - (dailyATR * 0.15)
+        baseStop := math.min(baseStop, lockPrice)
+
+    // Step 3: Tight Trail
+    if pctDailyATR >= 0.75
+        tightStop = low + (m1ATR * trailMultTight)
+        baseStop := math.min(baseStop, tightStop)
+
+    calcStop := baseStop
+    // Latch downward
+    if not na(stopPrice) and currentTrend == currentTrend[1]
+        stopPrice := math.min(stopPrice, calcStop)
+    else
+        stopPrice := calcStop
+else
+    stopPrice := na
+
+colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
+plot(showAdaptiveTrail and currentTrend != 0 ? stopPrice : na, "Stepped Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
+trailExit = (currentTrend == 1 and close < stopPrice) or (currentTrend == -1 and close > stopPrice)
+
+
+// =============================================================================
+// OFF-HOURS SCALPING LOGIC (Preserved)
 // =============================================================================
 [m1Close, m1High, m1Low, m1Vwma5, m1Vwma21] = request.security(syminfo.tickerid, "1", [close, high, low, ta.vwma(close, 5), ta.vwma(close, 21)])
 m15ATR = request.security(syminfo.tickerid, "15", ta.atr(14))
@@ -394,38 +646,6 @@ else
 
 driveDist = math.abs(m1Close - m1DriveOrigin)
 scalpCompletion = m15ATR != 0 ? (driveDist / m15ATR) * 100 : 0
-
-atrM5 = request.security(syminfo.tickerid, "5", ta.atr(14))
-var float trailMult = trailMultLow
-
-if sessionRangeCompletion < 60
-    trailMult := trailMultLow
-else if sessionRangeCompletion >= 60 and sessionRangeCompletion < 90
-    trailMult := trailMultMid
-else
-    trailMult := trailMultHigh
-
-var float trailPrice = na
-if currentTrend == 0
-    trailPrice := na
-
-if triggerBuy
-    trailPrice := low - (atrM5 * trailMult)
-else if triggerSell
-    trailPrice := high + (atrM5 * trailMult)
-else if currentTrend == 1
-    peak = high
-    calcTrail = peak - (atrM5 * trailMult)
-    trailPrice := na(trailPrice) ? calcTrail : math.max(trailPrice, calcTrail)
-else if currentTrend == -1
-    peak = low
-    calcTrail = peak + (atrM5 * trailMult)
-    trailPrice := na(trailPrice) ? calcTrail : math.min(trailPrice, calcTrail)
-
-colorTrail = currentTrend == 1 ? trailColorLong : trailColorShort
-plot(showAdaptiveTrail and currentTrend != 0 ? trailPrice : na, "Adaptive Trail", color=colorTrail, style=plot.style_linebr, linewidth=2)
-
-trailExit = (currentTrend == 1 and close < trailPrice) or (currentTrend == -1 and close > trailPrice)
 
 // =============================================================================
 // SOP INFO PANEL
@@ -486,62 +706,124 @@ if showSop and barstate.islast
 // =============================================================================
 // ATR TABLE DRAWING
 // =============================================================================
-var table atr_table = table.new(getPosition(atrTablePosition), 2, showATRDirection ? (showMultiLevelTargets ? 12 : 8) : 3, border_width=1)
+// Calculate total rows dynamically
+int t_rows = 3
+if showATRDirection
+    t_rows := t_rows + 5 // Avg, Dir, Pct, Reach, 75% Goal
+    if isIntraday
+        t_rows := t_rows + 1 // Active Session
+    if showMultiLevelTargets
+        t_rows := t_rows + 4 // T1-T4
+
+var table atr_table = table.new(getPosition(atrTablePosition), 2, t_rows, border_width=1)
 
 if barstate.islast and showPrevATR
     atrSize = getSize(atrTableSize)
+    int r = 0
+
+    // Header
     headerText = activeSessionName != "Off-Hours" ? activeSessionName : (isMinuteBased ? str.format("{0}M ATR Analysis", currentMinutes) : "ATR Analysis")
-    table.cell(atr_table, 0, 0, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
-    table.cell(atr_table, 1, 0, "", bgcolor = color.new(color.blue, 20))
-    table.cell(atr_table, 0, 1, "Prev Period ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-    table.cell(atr_table, 1, 1, str.format('{0, number, #.#####}', period_atr_prev), bgcolor = color.new(color.black, 10), text_color = color.yellow, text_size = atrSize)
-    table.cell(atr_table, 0, 2, "Current ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 0, r, headerText, bgcolor = color.new(color.blue, 20), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, r, "", bgcolor = color.new(color.blue, 20))
+    r += 1
+
+    // Prev ATR
+    table.cell(atr_table, 0, r, "Prev Period ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, r, str.format('{0, number, #.#####}', period_atr_prev), bgcolor = color.new(color.black, 10), text_color = color.yellow, text_size = atrSize)
+    r += 1
+
+    // Current ATR
+    table.cell(atr_table, 0, r, "Current ATR", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
     atr_change = period_atr_current - period_atr_prev
     atr_change_pct = period_atr_prev != 0 ? (atr_change / period_atr_prev) * 100 : 0
     atr_cell_color = atr_change > 0 ? color.new(color.red, 30) : color.new(color.green, 30)
-    table.cell(atr_table, 1, 2, str.format('{0, number, #.#####} ({1, number, +#.##;-#.##}%)', period_atr_current, atr_change_pct), bgcolor = atr_cell_color, text_color = color.white, text_size = atrSize)
+    table.cell(atr_table, 1, r, str.format('{0, number, #.#####} ({1, number, +#.##;-#.##}%)', period_atr_current, atr_change_pct), bgcolor = atr_cell_color, text_color = color.white, text_size = atrSize)
+    r += 1
 
     if showATRDirection
-        table.cell(atr_table, 0, 3, str.format("{0}-Period ATR Avg", atrLength), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 1, 3, str.format('{0, number, #.##} pips', atrMeanPips), bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 4, "Current Direction", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        // Period Avg
+        table.cell(atr_table, 0, r, str.format("{0}-Period ATR Avg", atrLength), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, r, str.format('{0, number, #.##} pips', atrMeanPips), bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = atrSize)
+        r += 1
+
+        // Direction
+        table.cell(atr_table, 0, r, "Current Direction", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         direction_color = bullishMove > 0 ? color.new(color.green, 30) : color.new(color.red, 30)
         direction_icon = bullishMove > 0 ? "▲" : "▼"
-        table.cell(atr_table, 1, 4, str.format('{0} {1, number, #.##} pips', direction_icon, currentDirectionalPips), bgcolor = direction_color, text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 5, "% ATR Reached", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, r, str.format('{0} {1, number, #.##} pips', direction_icon, currentDirectionalPips), bgcolor = direction_color, text_color = color.white, text_size = atrSize)
+        r += 1
+
+        // % ATR Reached
+        table.cell(atr_table, 0, r, "% ATR Reached", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         pct_color = percentReached >= 100 ? color.new(color.yellow, 30) : percentReached >= 75 ? color.new(color.orange, 30) : percentReached >= 50 ? color.new(color.blue, 30) : color.new(color.gray, 50)
-        table.cell(atr_table, 1, 5, str.format('{0, number, #.#}%', percentReached), bgcolor = pct_color, text_color = color.white, text_size = atrSize)
-        table.cell(atr_table, 0, 6, "Target Reached?", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, r, str.format('{0, number, #.#}%', percentReached), bgcolor = pct_color, text_color = color.white, text_size = atrSize)
+        r += 1
+
+        // Target Reached
+        table.cell(atr_table, 0, r, "Target Reached?", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
         target_status = targetReached ? "✓ YES" : "✗ NO"
         target_color = targetReached ? color.new(color.green, 30) : color.new(color.gray, 50)
-        table.cell(atr_table, 1, 6, target_status, bgcolor = target_color, text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, r, target_status, bgcolor = target_color, text_color = color.white, text_size = atrSize)
+        r += 1
 
-        if isIntraday and (isHourly or is4Hour)
-            table.cell(atr_table, 0, 7, "Active Session", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        // 75% Daily Goal
+        isBull = close > dailyOpen
+        float dist75 = isBull ? (target75_Upper - close) : (close - target75_Lower)
+        bool hit75 = isBull ? (high >= target75_Upper) : (low <= target75_Lower)
+        color c75 = color.gray
+        if sessionRangeCompletion >= 75
+            c75 := color.gold
+        else if sessionRangeCompletion >= 50
+            c75 := color.orange
+
+        table.cell(atr_table, 0, r, "75% Daily Goal", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+        table.cell(atr_table, 1, r, hit75 ? "✓ HIT" : str.format("{0, number, #.##} pips left", dist75 * pipMultiplier), bgcolor = hit75 ? color.new(color.gold, 30) : color.new(c75, 40), text_color = color.white, text_size = atrSize)
+        r += 1
+
+        if isIntraday
+            // Active Session & Time Warning
+            isAfter2PM = hour(time, "America/New_York") >= 14
+
+            table.cell(atr_table, 0, r, "Active Session", bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
             session_color = color.new(color.gray, 50)
-            if inNY
+            if isAfter2PM
+                session_color := color.new(color.red, 20)
+            else if inNY
                 session_color := color.new(color.blue, 30)
             else if inLondon
                 session_color := color.new(color.green, 30)
             else if inAsia
                 session_color := color.new(color.yellow, 30)
-            table.cell(atr_table, 1, 7, activeSessionName, bgcolor = session_color, text_color = color.white, text_size = atrSize)
+
+            session_text = activeSessionName
+            if isAfter2PM
+                session_text := session_text + " (LATE)"
+
+            table.cell(atr_table, 1, r, session_text, bgcolor = session_color, text_color = color.white, text_size = atrSize)
+            r += 1
 
         if showMultiLevelTargets
-            row_offset = (isIntraday and (isHourly or is4Hour)) ? 1 : 0
-            bullish_direction = close > referenceOpen
+            bullish_direction = close > refOpen
             target_1_hit = bullish_direction ? high >= upperTarget_1 : low <= lowerTarget_1
             target_2_hit = bullish_direction ? high >= upperTarget_2 : low <= lowerTarget_2
             target_3_hit = bullish_direction ? high >= upperTarget_3 : low <= lowerTarget_3
             target_4_hit = bullish_direction ? high >= upperTarget_4 : low <= lowerTarget_4
-            table.cell(atr_table, 0, 7 + row_offset, str.format("{0}x ATR Target", mult1), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 7 + row_offset, target_1_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_1 - close) * pipMultiplier : (close - lowerTarget_1) * pipMultiplier), bgcolor = target_1_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 8 + row_offset, str.format("{0}x ATR Target", mult2), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 8 + row_offset, target_2_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_2 - close) * pipMultiplier : (close - lowerTarget_2) * pipMultiplier), bgcolor = target_2_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 9 + row_offset, str.format("{0}x ATR Target", mult3), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 9 + row_offset, target_3_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_3 - close) * pipMultiplier : (close - lowerTarget_3) * pipMultiplier), bgcolor = target_3_hit ? color.new(color.yellow, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 0, 10 + row_offset, str.format("{0}x ATR Target", mult4), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
-            table.cell(atr_table, 1, 10 + row_offset, target_4_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_4 - close) * pipMultiplier : (close - lowerTarget_4) * pipMultiplier), bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+
+            table.cell(atr_table, 0, r, str.format("{0}x ATR Target", mult1), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, r, target_1_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_1 - close) * pipMultiplier : (close - lowerTarget_1) * pipMultiplier), bgcolor = target_1_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            r += 1
+
+            table.cell(atr_table, 0, r, str.format("{0}x ATR Target", mult2), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, r, target_2_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_2 - close) * pipMultiplier : (close - lowerTarget_2) * pipMultiplier), bgcolor = target_2_hit ? color.new(color.green, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            r += 1
+
+            table.cell(atr_table, 0, r, str.format("{0}x ATR Target", mult3), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, r, target_3_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_3 - close) * pipMultiplier : (close - lowerTarget_3) * pipMultiplier), bgcolor = target_3_hit ? color.new(color.yellow, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            r += 1
+
+            table.cell(atr_table, 0, r, str.format("{0}x ATR Target", mult4), bgcolor = color.new(color.gray, 80), text_color = color.white, text_size = atrSize)
+            table.cell(atr_table, 1, r, target_4_hit ? "✓ HIT" : str.format('{0, number, #.##} pips left', bullish_direction ? (upperTarget_4 - close) * pipMultiplier : (close - lowerTarget_4) * pipMultiplier), bgcolor = target_4_hit ? color.new(color.orange, 40) : color.new(color.gray, 60), text_color = color.white, text_size = atrSize)
+            r += 1
 
 // =============================================================================
 // BREAKOUT FINDER LOGIC
